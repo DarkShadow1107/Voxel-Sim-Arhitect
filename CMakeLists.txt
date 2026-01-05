@@ -68,6 +68,14 @@ set(SOURCES
     src/MeshBuilder.cpp
     src/Shader.cpp
     src/Texture.cpp
+    src/Modules/Physics.cpp
+    src/Modules/MobSystem.cpp
+    src/Modules/WeatherSystem.cpp
+    src/Modules/ChatSystem.cpp
+    src/Modules/PlayerSystem.cpp
+    src/Modules/FluidSystem.cpp
+    src/Modules/RenderSystem.cpp
+    src/Modules/UISystem.cpp
     ${glfw_SOURCE_DIR}/deps/glad_gl.c
     ${imgui_SOURCE_DIR}/imgui.cpp
     ${imgui_SOURCE_DIR}/imgui_draw.cpp

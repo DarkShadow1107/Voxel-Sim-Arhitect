@@ -11,6 +11,7 @@ public:
 
     size_t getOffset() const { return m_offset; }
     size_t getSize() const { return m_size; }
+    bool isValid() const { return m_buffer != nullptr; }
 
 private:
     void* m_buffer;
@@ -25,6 +26,7 @@ public:
 
     void* allocate();
     void deallocate(void* ptr);
+    bool owns(void* ptr) const;
 
     size_t getUsedCount() const { return m_usedCount; }
     size_t getTotalCount() const { return m_totalCount; }

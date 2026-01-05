@@ -6,13 +6,17 @@
 #include <algorithm>
 #include <fstream>
 
-World::World() {}
+World::World() {
+    // Initialize Octree with a large enough area
+    m_octree = std::make_unique<Octree>(AABB{{-2000, 0, -2000}, {2000, 256, 2000}}, 6);
+}
 World::~World() {}
 
 void World::clear() {
     std::lock_guard<std::mutex> lock(m_resultMutex);
     m_chunks.clear();
     m_meshResults.clear();
+    m_octree->clear();
 }
 
 void World::save(const std::string& filename) {
@@ -80,6 +84,16 @@ void World::update(const Vec3& playerPos, FastNoiseLite& noise, int seed, float 
         }
     }
 
+    // Rebuild Octree (Simple approach for now)
+    m_octree->clear();
+    for (auto& pair : m_chunks) {
+        ChunkData* cd = pair.second.get();
+        AABB bounds;
+        bounds.min = {(float)cd->x * Chunk::SizeX, 0.0f, (float)cd->z * Chunk::SizeZ};
+        bounds.max = {bounds.min.x + Chunk::SizeX, (float)Chunk::SizeY, bounds.min.z + Chunk::SizeZ};
+        m_octree->insert(cd, bounds);
+    }
+
     // 3. Collect mesh results from background threads
     {
         std::lock_guard<std::mutex> lock(m_resultMutex);
@@ -127,14 +141,23 @@ void World::update(const Vec3& playerPos, FastNoiseLite& noise, int seed, float 
 }
 
 void World::render(const Shader& shader, const Mat4& viewProj) {
+    Frustum frustum;
+    frustum.update(viewProj);
+
+    std::vector<ChunkData*> visibleChunks;
+    visibleChunks.reserve(m_chunks.size());
+    m_octree->query(frustum, visibleChunks);
+
     int rendered = 0;
-    for (auto& pair : m_chunks) {
-        float offsetX = (float)(pair.second->x * Chunk::SizeX);
-        float offsetZ = (float)(pair.second->z * Chunk::SizeZ);
+    for (ChunkData* cd : visibleChunks) {
+        if (!cd->mesh) continue; // Should not happen if logic is correct
+
+        float offsetX = (float)(cd->x * Chunk::SizeX);
+        float offsetZ = (float)(cd->z * Chunk::SizeZ);
         
         Mat4 model = translate({offsetX, 0.0f, offsetZ});
         shader.setMat4("uModel", model);
-        pair.second->mesh->draw();
+        cd->mesh->draw();
         rendered++;
     }
 }

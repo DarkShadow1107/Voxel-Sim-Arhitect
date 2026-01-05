@@ -14,6 +14,8 @@ ArenaAllocator::~ArenaAllocator() {
 }
 
 void* ArenaAllocator::allocate(size_t size, size_t alignment) {
+    if (!m_buffer) return nullptr;
+
     size_t current_ptr = reinterpret_cast<size_t>(m_buffer) + m_offset;
     size_t padding = (alignment - (current_ptr % alignment)) % alignment;
     
@@ -50,7 +52,7 @@ PoolAllocator::~PoolAllocator() {
 }
 
 void* PoolAllocator::allocate() {
-    if (!m_freeList) return nullptr;
+    if (!m_buffer || !m_freeList) return nullptr;
     
     Node* node = m_freeList;
     m_freeList = m_freeList->next;
@@ -60,8 +62,23 @@ void* PoolAllocator::allocate() {
 
 void PoolAllocator::deallocate(void* ptr) {
     if (!ptr) return;
+    
+    // Safety check: Ensure pointer belongs to this pool
+    if (!owns(ptr)) {
+        std::cerr << "PoolAllocator: Attempted to deallocate pointer " << ptr << " which does not belong to pool!" << std::endl;
+        return;
+    }
+
     Node* node = static_cast<Node*>(ptr);
     node->next = m_freeList;
     m_freeList = node;
     m_usedCount--;
+}
+
+bool PoolAllocator::owns(void* ptr) const {
+    if (!m_buffer) return false;
+    size_t start = reinterpret_cast<size_t>(m_buffer);
+    size_t end = start + m_totalSize;
+    size_t p = reinterpret_cast<size_t>(ptr);
+    return p >= start && p < end;
 }

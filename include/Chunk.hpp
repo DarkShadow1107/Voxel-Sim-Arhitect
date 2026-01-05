@@ -2,39 +2,9 @@
 
 #include <cstdint>
 #include <vector>
+#include "Modules/BlockData.hpp"
 
 class FastNoiseLite;
-
-enum BlockType : uint8_t {
-    BLOCK_AIR = 0,
-    BLOCK_DIRT = 1,
-    BLOCK_GRASS = 2,
-    BLOCK_STONE = 3,
-    BLOCK_WATER = 4,
-    BLOCK_LAVA = 5,
-    BLOCK_WOOD = 6,
-    BLOCK_LEAVES = 7,
-    BLOCK_SAND = 8,
-    BLOCK_SNOW = 9,
-    BLOCK_BEDROCK = 10,
-    BLOCK_FLOWER_RED = 11,
-    BLOCK_FLOWER_BLUE = 12,
-    BLOCK_TALL_GRASS = 13,
-    BLOCK_GLASS = 14,
-    BLOCK_COAL_ORE = 15,
-    BLOCK_IRON_ORE = 16,
-    BLOCK_GOLD_ORE = 17,
-    BLOCK_DIAMOND_ORE = 18,
-    BLOCK_BIRCH_WOOD = 19,
-    BLOCK_BIRCH_LEAVES = 20,
-    BLOCK_CHERRY_WOOD = 21,
-    BLOCK_CHERRY_LEAVES = 22,
-    BLOCK_COBBLESTONE = 23,
-    BLOCK_MOSSY_STONE = 24,
-    BLOCK_OAK_PLANKS = 25,
-    BLOCK_BRICKS = 26,
-    BLOCK_ICE = 27
-};
 
 class Chunk {
 public:

@@ -177,3 +177,113 @@ inline Mat4 lookAt(const Vec3& eye, const Vec3& center, const Vec3& up) {
 
     return r;
 }
+
+struct Plane {
+    float a, b, c, d;
+    
+    void normalize() {
+        float mag = std::sqrt(a * a + b * b + c * c);
+        a /= mag; b /= mag; c /= mag; d /= mag;
+    }
+    
+    float distance(const Vec3& p) const {
+        return a * p.x + b * p.y + c * p.z + d;
+    }
+};
+
+struct AABB {
+    Vec3 min;
+    Vec3 max;
+
+    bool intersects(const AABB& other) const {
+        return (min.x <= other.max.x && max.x >= other.min.x) &&
+               (min.y <= other.max.y && max.y >= other.min.y) &&
+               (min.z <= other.max.z && max.z >= other.min.z);
+    }
+    
+    bool contains(const Vec3& p) const {
+        return (p.x >= min.x && p.x <= max.x) &&
+               (p.y >= min.y && p.y <= max.y) &&
+               (p.z >= min.z && p.z <= max.z);
+    }
+
+    Vec3 getCenter() const {
+        return (min + max) * 0.5f;
+    }
+
+    Vec3 getExtents() const {
+        return (max - min) * 0.5f;
+    }
+};
+
+struct Frustum {
+    Plane planes[6];
+    
+    void update(const Mat4& vp) {
+        // Left
+        planes[0].a = vp.m[3] + vp.m[0];
+        planes[0].b = vp.m[7] + vp.m[4];
+        planes[0].c = vp.m[11] + vp.m[8];
+        planes[0].d = vp.m[15] + vp.m[12];
+        
+        // Right
+        planes[1].a = vp.m[3] - vp.m[0];
+        planes[1].b = vp.m[7] - vp.m[4];
+        planes[1].c = vp.m[11] - vp.m[8];
+        planes[1].d = vp.m[15] - vp.m[12];
+        
+        // Bottom
+        planes[2].a = vp.m[3] + vp.m[1];
+        planes[2].b = vp.m[7] + vp.m[5];
+        planes[2].c = vp.m[11] + vp.m[9];
+        planes[2].d = vp.m[15] + vp.m[13];
+        
+        // Top
+        planes[3].a = vp.m[3] - vp.m[1];
+        planes[3].b = vp.m[7] - vp.m[5];
+        planes[3].c = vp.m[11] - vp.m[9];
+        planes[3].d = vp.m[15] - vp.m[13];
+        
+        // Near
+        planes[4].a = vp.m[3] + vp.m[2];
+        planes[4].b = vp.m[7] + vp.m[6];
+        planes[4].c = vp.m[11] + vp.m[10];
+        planes[4].d = vp.m[15] + vp.m[14];
+        
+        // Far
+        planes[5].a = vp.m[3] - vp.m[2];
+        planes[5].b = vp.m[7] - vp.m[6];
+        planes[5].c = vp.m[11] - vp.m[10];
+        planes[5].d = vp.m[15] - vp.m[14];
+        
+        for(int i=0; i<6; ++i) planes[i].normalize();
+    }
+    
+    bool testPoint(const Vec3& p) const {
+        for(int i=0; i<6; ++i) {
+            if(planes[i].distance(p) < 0) return false;
+        }
+        return true;
+    }
+    
+    bool testSphere(const Vec3& center, float radius) const {
+        for(int i=0; i<6; ++i) {
+            if(planes[i].distance(center) < -radius) return false;
+        }
+        return true;
+    }
+
+    bool testAABB(const AABB& box) const {
+        for (int i = 0; i < 6; i++) {
+            Vec3 p = box.min;
+            if (planes[i].a >= 0) p.x = box.max.x;
+            if (planes[i].b >= 0) p.y = box.max.y;
+            if (planes[i].c >= 0) p.z = box.max.z;
+
+            if (planes[i].distance(p) < 0) {
+                return false;
+            }
+        }
+        return true;
+    }
+};

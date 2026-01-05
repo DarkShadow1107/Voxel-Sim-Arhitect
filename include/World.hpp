@@ -8,6 +8,7 @@
 #include "Chunk.hpp"
 #include "GLMesh.hpp"
 #include "Math.hpp"
+#include "Octree.hpp"
 
 struct ChunkData {
     std::unique_ptr<Chunk> chunk;
@@ -46,6 +47,7 @@ public:
 
 private:
     std::unordered_map<uint64_t, std::unique_ptr<ChunkData>> m_chunks;
+    std::unique_ptr<Octree> m_octree;
     int m_renderDistance = 4;
 
     struct MeshResult {
