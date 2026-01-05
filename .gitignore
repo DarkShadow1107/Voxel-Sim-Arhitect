@@ -1,0 +1,19 @@
+# Ignore everything in build
+build/*
+
+# But allow the bin and Release directories so we can reach the executable
+!build/bin/
+!build/bin/Release/
+
+# Ignore everything else inside build/bin except Release
+build/bin/*
+!build/bin/Release/
+
+# Ignore all .ini files
+*.ini
+
+# Ignore executables and build artifacts
+*.exe
+*.pdb
+*.obj
+*.log

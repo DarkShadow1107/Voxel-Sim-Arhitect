@@ -1,0 +1,5 @@
+# Entity Model Placeholder (OBJ/FBX)
+# This folder will store 3D models for entities like:
+# - Player character
+# - NPCs
+# - Tools/Items

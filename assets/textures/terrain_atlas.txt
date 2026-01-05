@@ -1,0 +1,8 @@
+# Voxel Texture Atlas Placeholder
+# In a real engine, this would be a .png or .dds file containing:
+# - Grass top/side/bottom
+# - Dirt
+# - Stone
+# - Wood
+# - Leaves
+# - Water

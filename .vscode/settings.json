@@ -1,0 +1,4 @@
+{
+	"git.ignoredRepositories": ["build/_deps/glfw-src", "build/_deps/imgui-src", "build/_deps/fastnoise-src"],
+	"git.scanRepositories": ["c:/Users/Alexandru Gabriel/Desktop/GitHub/Voxel-Sim Arhitect"]
+}
