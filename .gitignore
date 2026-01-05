@@ -11,9 +11,3 @@ build/bin/*
 
 # Ignore all .ini files
 *.ini
-
-# Ignore executables and build artifacts
-*.exe
-*.pdb
-*.obj
-*.log
