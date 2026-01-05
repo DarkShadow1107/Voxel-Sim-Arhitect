@@ -16,7 +16,6 @@
 #include "GUIManager.hpp"
 #include "GLMesh.hpp"
 #include "MeshBuilder.hpp"
-#include "Octree.hpp"
 #include "Renderer.hpp"
 #include "Shader.hpp"
 #include "TaskScheduler.hpp"
@@ -55,7 +54,6 @@ enum MobType {
 };
 
 struct Mob {
-    Vec3 position;
     Vec3 velocity;
     float yawDeg = 0.0f;
     MobType type = MOB_COW;
@@ -82,7 +80,6 @@ int main() {
 
     // 1. Memory Management
     ArenaAllocator mainAllocator(1024 * 1024 * 100); // 100MB Arena
-    PoolAllocator voxelPool(sizeof(Voxel), 1000000); // Pool for 1M voxels
     
     // 2. Procedural Generation Setup
     FastNoiseLite noise;
@@ -95,11 +92,10 @@ int main() {
     
     // 3. Multi-threaded Task Scheduler
     TaskScheduler scheduler(std::thread::hardware_concurrency());
-    
-    // 4. Spatial Partitioning (Octree)
-    AABB worldBounds = {{-100, -100, -100}, {100, 100, 100}};
-    // OctreeNode world(worldBounds); // Removed to avoid conflict with World class
 
+    // 4. ECS Setup
+    Registry registry;
+    
     // 5. Renderer & GUI Initialization
     Renderer renderer;
     int screenW = 1280, screenH = 720;
@@ -131,7 +127,7 @@ int main() {
     char chatInput[256] = "";
     bool chatOpen = false;
     bool inventoryOpen = false;
-    std::vector<Mob> mobs;
+    // Registry registry; // Already initialized in main() section 6
     std::vector<SnowParticle> snowParticles;
     float worldTime = 6000.0f; // Start at noon
     bool isRaining = false;
@@ -311,31 +307,36 @@ int main() {
     };
 
     auto spawnInitialMobs = [&]() {
-        if (!mobs.empty()) return;
+        auto mobPool = registry.getPool<Mob>();
+        if (mobPool && !mobPool->components.empty()) return;
+        
         for (int i = 0; i < 32; ++i) {
+            Entity ent = registry.createEntity();
             Mob m;
+            Transform t;
+            
             m.type = (MobType)(rand() % (int)MOB_COUNT);
             float x = (float)(rand() % 160 - 80);
             float z = (float)(rand() % 160 - 80);
             
             if (isAquatic(m.type)) {
-                // Spawn in water (sea level is 12)
-                m.position = {x, (float)(rand() % 8 + 2), z};
+                t.position = {x, (float)(rand() % 8 + 2), z};
             } else {
                 float y = findGroundY(x, z, 120);
-                m.position = {x, y, z};
+                t.position = {x, y, z};
             }
             
             m.yawDeg = (float)(rand() % 360);
             m.hp = isAquatic(m.type) ? 6.0f : 10.0f;
             m.wanderYawDeg = m.yawDeg;
             m.wanderTimer = (float)(rand() % 1000) / 1000.0f;
-            mobs.push_back(m);
+            
+            registry.addComponent(ent, m);
+            registry.addComponent(ent, t);
         }
     };
 
     // 6. ECS Setup
-    Registry registry;
     Entity player = registry.createEntity();
     registry.addComponent(player, Transform{{0, 0, 0}});
     
@@ -404,7 +405,10 @@ int main() {
         gui.showMainMenuBar(showProfiler, showMemory, showECS, showWorldEditor, showSettings);
 
         if (showProfiler) gui.showProfiler(deltaMs);
-        if (showMemory) gui.showMemoryInspector(mainAllocator.getOffset(), mainAllocator.getSize(), voxelPool.getUsedCount(), voxelPool.getTotalCount());
+        if (showMemory) {
+            auto& chunkAlloc = Chunk::getAllocator();
+            gui.showMemoryInspector(mainAllocator.getOffset(), mainAllocator.getSize(), chunkAlloc.getUsedCount(), chunkAlloc.getTotalCount());
+        }
         if (showECS) gui.showECSEditor();
         if (showSettings) gui.showSettings(&showSettings, vsync, wireframe, fullscreen, backfaceCulling, renderer);
 
@@ -1072,114 +1076,122 @@ int main() {
         // Spawn once chunks exist
         spawnInitialMobs();
 
-        // Update Mobs
-        for (auto& mob : mobs) {
-            if (mob.hp <= 0.0f) continue;
+        // Update Mobs (ECS)
+        auto mobPool = registry.getPool<Mob>();
+        if (mobPool) {
+            for (size_t i = 0; i < mobPool->components.size(); ++i) {
+                Entity ent = mobPool->indexToEntity[i];
+                Mob& mob = mobPool->components[i];
+                Transform* transform = registry.getComponent<Transform>(ent);
+                if (!transform || mob.hp <= 0.0f) continue;
 
-            Vec3 half = mobHalfExtents(mob.type);
-            int mx = (int)std::floor(mob.position.x);
-            int mz = (int)std::floor(mob.position.z);
-            int myFeet = (int)std::floor(mob.position.y);
-            bool inWater = isWater(world.getBlock(mx, myFeet, mz)) || isWater(world.getBlock(mx, myFeet + 1, mz));
-            bool inLava = isLava(world.getBlock(mx, myFeet, mz)) || isLava(world.getBlock(mx, myFeet + 1, mz));
+                Vec3 half = mobHalfExtents(mob.type);
+                int mx = (int)std::floor(transform->position.x);
+                int mz = (int)std::floor(transform->position.z);
+                int myFeet = (int)std::floor(transform->position.y);
+                bool inWater = isWater(world.getBlock(mx, myFeet, mz)) || isWater(world.getBlock(mx, myFeet + 1, mz));
+                bool inLava = isLava(world.getBlock(mx, myFeet, mz)) || isLava(world.getBlock(mx, myFeet + 1, mz));
 
-            if (inLava) {
-                mob.hp -= (float)dt * 6.0f;
-                mob.onFireSeconds = 2.0f;
-            }
-            if (mob.onFireSeconds > 0.0f) {
-                mob.onFireSeconds = std::max(0.0f, mob.onFireSeconds - (float)dt);
-                mob.hp -= (float)dt * 1.5f;
-            }
-            if (isAquatic(mob.type) && !inWater) {
-                mob.hp -= (float)dt * 2.0f;
-            }
-
-            // Wander AI
-            mob.wanderTimer -= (float)dt;
-            if (mob.wanderTimer <= 0.0f) {
-                mob.wanderTimer = 2.0f + (float)(rand() % 3000) / 1000.0f;
-                mob.wanderYawDeg += (float)(rand() % 180 - 90);
-            }
-            
-            // Avoid Lava & Cliffs AI
-            float yawRad = mob.yawDeg * 0.01745329252f;
-            Vec3 frontCheck = mob.position + Vec3{std::sin(yawRad) * 1.5f, 0.0f, std::cos(yawRad) * 1.5f};
-            uint8_t bFront = world.getBlock((int)frontCheck.x, (int)frontCheck.y, (int)frontCheck.z);
-            uint8_t bBelow = world.getBlock((int)frontCheck.x, (int)frontCheck.y - 1, (int)frontCheck.z);
-            
-            if (isLava(bFront) || (bBelow == 0 && !isAquatic(mob.type))) {
-                mob.wanderYawDeg += 180.0f; // Turn around
-            }
-
-            float yawDelta = mob.wanderYawDeg - mob.yawDeg;
-            if (yawDelta > 180.0f) yawDelta -= 360.0f;
-            if (yawDelta < -180.0f) yawDelta += 360.0f;
-            mob.yawDeg += yawDelta * std::min(1.0f, (float)dt * 3.0f);
-
-            float speed = mobBaseSpeed(mob.type);
-            if (inWater) speed *= 0.50f; // Slower in water
-            if (inLava) speed *= 0.20f;
-            
-            Vec3 wish = {std::sin(yawRad) * speed, 0.0f, std::cos(yawRad) * speed};
-            
-            if (isAquatic(mob.type)) {
-                wish.y = sin((float)glfwGetTime() * 1.5f + mob.position.x * 0.2f) * 1.2f;
-                if (!inWater) wish.y = -2.0f; // Flop down if out of water
-            }
-
-            mob.velocity.x = wish.x;
-            mob.velocity.z = wish.z;
-
-            auto collideWithOtherMobs = [&](const Vec3& pos, const Mob* current) {
-                for (const auto& other : mobs) {
-                    if (&other == current || other.hp <= 0.0f) continue;
-                    float distSq = (pos.x - other.position.x)*(pos.x - other.position.x) + 
-                                   (pos.z - other.position.z)*(pos.z - other.position.z);
-                    if (distSq < 0.7f && std::abs(pos.y - other.position.y) < 1.2f) return true;
+                if (inLava) {
+                    mob.hp -= (float)dt * 6.0f;
+                    mob.onFireSeconds = 2.0f;
                 }
-                return false;
-            };
+                if (mob.onFireSeconds > 0.0f) {
+                    mob.onFireSeconds = std::max(0.0f, mob.onFireSeconds - (float)dt);
+                    mob.hp -= (float)dt * 1.5f;
+                }
+                if (isAquatic(mob.type) && !inWater) {
+                    mob.hp -= (float)dt * 2.0f;
+                }
 
-            bool onGround = world.isSolid((int)std::floor(mob.position.x), (int)std::floor(mob.position.y - 0.1f), (int)std::floor(mob.position.z));
-            if (!isAquatic(mob.type)) {
-                if (!inWater && !onGround) mob.velocity.y -= 28.0f * (float)dt;
-                if (inWater) mob.velocity.y += 6.0f * (float)dt; // Swim up faster to stay afloat
-                if (onGround) {
-                    mob.velocity.y = std::max(0.0f, mob.velocity.y);
-                    // Jump if blocked in front
-                    Vec3 front = mob.position + Vec3{std::sin(yawRad) * 0.7f, 0.0f, std::cos(yawRad) * 0.7f};
-                    if (world.isSolid((int)std::floor(front.x), (int)std::floor(front.y), (int)std::floor(front.z)) ||
-                        world.isSolid((int)std::floor(front.x), (int)std::floor(front.y + 1.0f), (int)std::floor(front.z))) {
-                        mob.velocity.y = 9.0f;
+                // Wander AI
+                mob.wanderTimer -= (float)dt;
+                if (mob.wanderTimer <= 0.0f) {
+                    mob.wanderTimer = 2.0f + (float)(rand() % 3000) / 1000.0f;
+                    mob.wanderYawDeg += (float)(rand() % 180 - 90);
+                }
+                
+                // Avoid Lava & Cliffs AI
+                float yawRad = mob.yawDeg * 0.01745329252f;
+                Vec3 frontCheck = transform->position + Vec3{std::sin(yawRad) * 1.5f, 0.0f, std::cos(yawRad) * 1.5f};
+                uint8_t bFront = world.getBlock((int)frontCheck.x, (int)frontCheck.y, (int)frontCheck.z);
+                uint8_t bBelow = world.getBlock((int)frontCheck.x, (int)frontCheck.y - 1, (int)frontCheck.z);
+                
+                if (isLava(bFront) || (bBelow == 0 && !isAquatic(mob.type))) {
+                    mob.wanderYawDeg += 180.0f; // Turn around
+                }
+
+                float yawDelta = mob.wanderYawDeg - mob.yawDeg;
+                if (yawDelta > 180.0f) yawDelta -= 360.0f;
+                if (yawDelta < -180.0f) yawDelta += 360.0f;
+                mob.yawDeg += yawDelta * std::min(1.0f, (float)dt * 3.0f);
+
+                float speed = mobBaseSpeed(mob.type);
+                if (inWater) speed *= 0.50f; 
+                if (inLava) speed *= 0.20f;
+                
+                Vec3 wish = {std::sin(yawRad) * speed, 0.0f, std::cos(yawRad) * speed};
+                
+                if (isAquatic(mob.type)) {
+                    wish.y = sin((float)glfwGetTime() * 1.5f + transform->position.x * 0.2f) * 1.2f;
+                    if (!inWater) wish.y = -2.0f; 
+                }
+
+                mob.velocity.x = wish.x;
+                mob.velocity.z = wish.z;
+
+                auto collideWithOtherMobs = [&](const Vec3& pos, Entity currentEnt) {
+                    for (size_t j = 0; j < mobPool->components.size(); ++j) {
+                        Entity otherEnt = mobPool->indexToEntity[j];
+                        if (currentEnt == otherEnt || mobPool->components[j].hp <= 0.0f) continue;
+                        Transform* otherT = registry.getComponent<Transform>(otherEnt);
+                        if (!otherT) continue;
+                        float distSq = (pos.x - otherT->position.x)*(pos.x - otherT->position.x) + 
+                                       (pos.z - otherT->position.z)*(pos.z - otherT->position.z);
+                        if (distSq < 0.7f && std::abs(pos.y - otherT->position.y) < 1.2f) return true;
                     }
-                    else if (rand() % 800 == 0 && !inWater) mob.velocity.y = 7.0f;
+                    return false;
+                };
+
+                bool onGround = world.isSolid((int)std::floor(transform->position.x), (int)std::floor(transform->position.y - 0.1f), (int)std::floor(transform->position.z));
+                if (!isAquatic(mob.type)) {
+                    if (!inWater && !onGround) mob.velocity.y -= 28.0f * (float)dt;
+                    if (inWater) mob.velocity.y += 6.0f * (float)dt; 
+                    if (onGround) {
+                        mob.velocity.y = std::max(0.0f, mob.velocity.y);
+                        Vec3 front = transform->position + Vec3{std::sin(yawRad) * 0.7f, 0.0f, std::cos(yawRad) * 0.7f};
+                        if (world.isSolid((int)std::floor(front.x), (int)std::floor(front.y), (int)std::floor(front.z)) ||
+                            world.isSolid((int)std::floor(front.x), (int)std::floor(front.y + 1.0f), (int)std::floor(front.z))) {
+                            mob.velocity.y = 9.0f;
+                        }
+                        else if (rand() % 800 == 0 && !inWater) mob.velocity.y = 7.0f;
+                    }
+                } else {
+                    mob.velocity.y = wish.y;
                 }
-            } else {
-                mob.velocity.y = wish.y;
+
+                Vec3 newPos = transform->position;
+                Vec3 tryPos = newPos;
+                tryPos.x += mob.velocity.x * (float)dt;
+                if (!collideAABB(tryPos, half) && !collideWithOtherMobs(tryPos, ent)) newPos.x = tryPos.x;
+                else mob.wanderYawDeg += 180.0f;
+
+                tryPos = newPos;
+                tryPos.z += mob.velocity.z * (float)dt;
+                if (!collideAABB(tryPos, half) && !collideWithOtherMobs(tryPos, ent)) newPos.z = tryPos.z;
+                else mob.wanderYawDeg += 180.0f;
+
+                tryPos = newPos;
+                tryPos.y += mob.velocity.y * (float)dt;
+                if (!collideAABB(tryPos, half)) {
+                    newPos.y = tryPos.y;
+                } else {
+                    mob.velocity.y = 0.0f;
+                }
+
+                transform->position = newPos;
+                if (transform->position.y < 0.0f) transform->position.y = 100.0f;
             }
-
-            Vec3 newPos = mob.position;
-            Vec3 tryPos = newPos;
-            tryPos.x += mob.velocity.x * (float)dt;
-            if (!collideAABB(tryPos, half) && !collideWithOtherMobs(tryPos, &mob)) newPos.x = tryPos.x;
-            else mob.wanderYawDeg += 180.0f; // Turn around if hit wall or mob
-
-            tryPos = newPos;
-            tryPos.z += mob.velocity.z * (float)dt;
-            if (!collideAABB(tryPos, half) && !collideWithOtherMobs(tryPos, &mob)) newPos.z = tryPos.z;
-            else mob.wanderYawDeg += 180.0f;
-
-            tryPos = newPos;
-            tryPos.y += mob.velocity.y * (float)dt;
-            if (!collideAABB(tryPos, half)) {
-                newPos.y = tryPos.y;
-            } else {
-                mob.velocity.y = 0.0f;
-            }
-
-            mob.position = newPos;
-            if (mob.position.y < 0.0f) mob.position.y = 100.0f;
         }
 
         // Day/Night Cycle Simulation
@@ -1210,13 +1222,20 @@ int main() {
             voxelShader.setMat4("uModel", Mat4::identity());
             world.render(voxelShader, camera.projectionMatrix() * camera.viewMatrix());
 
-            // Render Mobs
-            for (const auto& mob : mobs) {
-                if (mob.hp <= 0.0f) continue;
-                Vec3 half = mobHalfExtents(mob.type);
-                Mat4 model = translate(mob.position) * rotateY(mob.yawDeg * 0.01745329252f) * scale({half.x * 2.0f, half.y * 2.0f, half.z * 2.0f});
-                voxelShader.setMat4("uModel", model);
-                mobMeshes[(int)mob.type].draw();
+            // Render Mobs (ECS)
+            auto mobPool = registry.getPool<Mob>();
+            if (mobPool) {
+                for (size_t i = 0; i < mobPool->components.size(); ++i) {
+                    Entity ent = mobPool->indexToEntity[i];
+                    Mob& mob = mobPool->components[i];
+                    Transform* transform = registry.getComponent<Transform>(ent);
+                    if (!transform || mob.hp <= 0.0f) continue;
+
+                    Vec3 half = mobHalfExtents(mob.type);
+                    Mat4 model = translate(transform->position) * rotateY(mob.yawDeg * 0.01745329252f) * scale({half.x * 2.0f, half.y * 2.0f, half.z * 2.0f});
+                    voxelShader.setMat4("uModel", model);
+                    mobMeshes[(int)mob.type].draw();
+                }
             }
 
             // Sun / Moon

@@ -11,11 +11,13 @@ public:
 
     size_t getOffset() const { return m_offset; }
     size_t getSize() const { return m_size; }
+    size_t getAllocatedCount() const { return m_allocatedCount; }
 
 private:
     void* m_buffer;
     size_t m_size;
     size_t m_offset;
+    size_t m_allocatedCount;
 };
 
 class PoolAllocator {

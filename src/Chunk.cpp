@@ -2,28 +2,50 @@
 #include "FastNoiseLite.h"
 #include "StructureGenerator.hpp"
 #include <algorithm>
+#include <cstring>
+#include <iostream>
 
-Chunk::Chunk() : m_voxels(kVoxelCount, 0) {}
+// Initialize the static pool allocator for up to 4096 chunks
+PoolAllocator Chunk::s_allocator(kVoxelCount * sizeof(uint8_t), 4096);
+
+Chunk::Chunk() {
+    m_voxels = static_cast<uint8_t*>(s_allocator.allocate());
+    if (m_voxels) {
+        std::memset(m_voxels, 0, kVoxelCount);
+    } else {
+        std::cerr << "FATAL ERROR: Chunk allocation failed! Pool exhausted." << std::endl;
+        // Safety check: if pool is exhausted, some parts of the game may crash
+        // In a real scenario, we might want to use a fallback or force a garbage collection
+    }
+}
+
+Chunk::~Chunk() {
+    if (m_voxels) {
+        s_allocator.deallocate(m_voxels);
+    }
+}
 
 uint8_t Chunk::get(int x, int y, int z) const {
-    if (x < 0 || y < 0 || z < 0 || x >= SizeX || y >= SizeY || z >= SizeZ) {
+    if (!m_voxels || x < 0 || y < 0 || z < 0 || x >= SizeX || y >= SizeY || z >= SizeZ) {
         return 0;
     }
     return m_voxels[(size_t)idx(x, y, z)];
 }
 
 void Chunk::set(int x, int y, int z, uint8_t v) {
-    if (x < 0 || y < 0 || z < 0 || x >= SizeX || y >= SizeY || z >= SizeZ) {
+    if (!m_voxels || x < 0 || y < 0 || z < 0 || x >= SizeX || y >= SizeY || z >= SizeZ) {
         return;
     }
     m_voxels[(size_t)idx(x, y, z)] = v;
 }
 
 void Chunk::generateTerrain(FastNoiseLite& noise, int seed, float frequency, int baseHeight, int offsetX, int offsetZ) {
+    if (!m_voxels) return;
+
     noise.SetSeed(seed);
     noise.SetFrequency(frequency);
 
-    std::fill(m_voxels.begin(), m_voxels.end(), 0);
+    std::memset(m_voxels, 0, kVoxelCount);
 
     FastNoiseLite mountainNoise;
     mountainNoise.SetSeed(seed + 1);
@@ -197,6 +219,7 @@ void Chunk::generateTerrain(FastNoiseLite& noise, int seed, float frequency, int
 }
 
 void Chunk::generateCaves(FastNoiseLite& noise, int seed) {
+    if (!m_voxels) return;
     FastNoiseLite caveNoise;
     caveNoise.SetSeed(seed + 2);
     caveNoise.SetFrequency(0.05f);

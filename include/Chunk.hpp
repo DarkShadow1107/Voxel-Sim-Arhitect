@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <vector>
+#include "Allocator.hpp"
 
 class FastNoiseLite;
 
@@ -43,18 +44,24 @@ public:
     static constexpr int SizeZ = 32;
 
     Chunk();
+    ~Chunk();
+
+    static PoolAllocator& getAllocator() { return s_allocator; }
 
     uint8_t get(int x, int y, int z) const;
     void set(int x, int y, int z, uint8_t v);
 
-    uint8_t* getData() { return m_voxels.data(); }
+    uint8_t* getData() { return m_voxels; }
 
     void generateTerrain(FastNoiseLite& noise, int seed, float frequency, int baseHeight, int offsetX, int offsetZ);
     void generateCaves(FastNoiseLite& noise, int seed);
 
 private:
     static constexpr int kVoxelCount = SizeX * SizeY * SizeZ;
-    std::vector<uint8_t> m_voxels;
+    uint8_t* m_voxels;
+    
+    // Global allocator for all chunk voxel data
+    static PoolAllocator s_allocator;
 
     static int idx(int x, int y, int z) { 
         if (x < 0 || x >= SizeX || y < 0 || y >= SizeY || z < 0 || z >= SizeZ) return -1;

@@ -55,7 +55,6 @@ set(SOURCES
     src/main.cpp
     src/Allocator.cpp
     src/TaskScheduler.cpp
-    src/Octree.cpp
     src/Compression.cpp
     src/Renderer.cpp
     src/Framebuffer.cpp
@@ -81,5 +80,8 @@ add_executable(${PROJECT_NAME} ${SOURCES})
 
 # Link libraries
 target_link_libraries(${PROJECT_NAME} glfw OpenGL::GL)
+if(WIN32)
+    target_link_libraries(${PROJECT_NAME} psapi)
+endif()
 
 message(STATUS "Voxel-Sim Architect project configured with FetchContent.")
