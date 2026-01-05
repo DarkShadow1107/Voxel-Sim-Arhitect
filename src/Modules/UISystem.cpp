@@ -6,9 +6,15 @@
 #include <cstdint>
 
 namespace UISystem {
-    void render(GameState& state, RenderSystem::RenderResources& res, Framebuffer& viewportBuffer, Vec2& viewportSize) {
+    void render(GameState& state, RenderSystem::RenderResources& res, Framebuffer& viewportBuffer, Vec2& viewportSize, GUIManager& gui, Renderer& renderer, float dt) {
+        // Main Menu Bar
+        gui.showMainMenuBar(state.showProfiler, state.showMemory, state.showECS, state.showWorldEditor, state.showSettings);
+
+        // Viewport Window (Full Screen Background)
+        ImGui::SetNextWindowPos(ImVec2(0, 0));
+        ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-        ImGui::Begin("Viewport", nullptr, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+        ImGui::Begin("Viewport", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus | ImGuiWindowFlags_NoInputs);
         
         ImVec2 vSize = ImGui::GetContentRegionAvail();
         if (vSize.x != viewportSize.x || vSize.y != viewportSize.y) {
@@ -55,7 +61,7 @@ namespace UISystem {
             ImGui::Text("Pos: %.1f, %.1f, %.1f", state.camera.position().x, state.camera.position().y, state.camera.position().z);
         }
 
-        state.viewportHovered = ImGui::IsWindowHovered();
+        state.viewportHovered = !ImGui::GetIO().WantCaptureMouse;
         ImGui::End();
         ImGui::PopStyleVar();
 
@@ -101,5 +107,11 @@ namespace UISystem {
         }
 
         ChatSystem::render(state.chatHistory, state.chatInput, state.chatOpen);
+
+        // Other Windows from GUIManager
+        if (state.showProfiler) gui.showProfiler(dt * 1000.0f);
+        if (state.showMemory) gui.showMemoryInspector(0, 0, 0, 0); // Placeholders for now
+        if (state.showECS) gui.showECSEditor();
+        if (state.showSettings) gui.showSettings(&state.showSettings, state.vsync, state.wireframe, state.fullscreen, state.backfaceCulling, renderer);
     }
 }

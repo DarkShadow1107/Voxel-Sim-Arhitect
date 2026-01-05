@@ -46,7 +46,7 @@ bool GUIManager::init(GLFWwindow* window) {
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;           // Enable Docking
-    io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;         // Enable Multi-Viewport / Platform Windows
+    // io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;      // Disabled to prevent "very many instances" of OS windows
 
     applyTheme();
 
@@ -116,10 +116,12 @@ void GUIManager::applyTheme() {
 
     // When using multi-viewport, match ImGui defaults to avoid rounding artifacts
     // between the main window and platform windows.
+    /*
     if (ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
         style.WindowRounding = 0.0f;
         colors[ImGuiCol_WindowBg].w = 1.0f;
     }
+    */
 }
 
 void GUIManager::showMainMenuBar(bool& showProfiler, bool& showMemory, bool& showECS, bool& showWorldEditor, bool& showSettings) {
@@ -173,12 +175,14 @@ void GUIManager::endFrame() {
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
     // Update and Render additional Platform Windows
+    /*
     if (ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
         GLFWwindow* backup_current_context = glfwGetCurrentContext();
         ImGui::UpdatePlatformWindows();
         ImGui::RenderPlatformWindowsDefault();
         glfwMakeContextCurrent(backup_current_context);
     }
+    */
 }
 
 void GUIManager::shutdown() {

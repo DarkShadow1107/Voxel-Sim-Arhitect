@@ -52,6 +52,13 @@ int main() {
         if (ImGui::IsKeyPressed(ImGuiKey_E) && !state.chatOpen) state.playerState.inventoryOpen = !state.playerState.inventoryOpen;
         if (ImGui::IsKeyPressed(ImGuiKey_Enter)) state.chatOpen = !state.chatOpen;
 
+        // Cursor Management
+        if (state.menuMode || state.chatOpen || state.playerState.inventoryOpen) {
+            glfwSetInputMode(renderer.getWindow(), GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+        } else {
+            glfwSetInputMode(renderer.getWindow(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+        }
+
         // Systems Update
         if (!state.menuMode && !state.chatOpen && !state.playerState.inventoryOpen) {
             PlayerSystem::update(state.playerState, state.camera, state.world, renderer.getWindow(), dt, (float)glfwGetTime(), state.menuMode);
@@ -71,7 +78,7 @@ int main() {
 
         // Rendering
         RenderSystem::render(state, res, viewportBuffer, viewportSize);
-        UISystem::render(state, res, viewportBuffer, viewportSize);
+        UISystem::render(state, res, viewportBuffer, viewportSize, gui, renderer, dt);
 
         gui.endFrame();
         renderer.swapBuffers();

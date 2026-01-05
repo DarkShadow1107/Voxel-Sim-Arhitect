@@ -40,10 +40,10 @@ struct GameState {
     bool menuMode = true;
     
     // UI Visibility
-    bool showProfiler = true;
-    bool showMemory = true;
-    bool showECS = true;
-    bool showWorldEditor = true;
+    bool showProfiler = false;
+    bool showMemory = false;
+    bool showECS = false;
+    bool showWorldEditor = false;
     bool showSettings = false;
     bool viewportHovered = false;
     
