@@ -12,36 +12,47 @@ uniform vec3 uViewPos;
 uniform sampler2D uTexture;
 uniform float uTime;
 uniform vec2 uResolution;
+uniform vec3 uColorTint;
 
 void main() {
     vec3 n = normalize(vNormal);
     vec3 l = normalize(-uLightDir);
 
     vec2 uv = vTexCoord;
-    ivec2 tile = ivec2(floor(uv * 16.0));
-    bool isWater = (tile.x == 4 && tile.y == 0);
-    bool isLava  = (tile.x == 5 && tile.y == 0);
-    bool isIce   = (tile.x == 12 && tile.y == 1);
-    bool isSnow  = (tile.x == 9 && tile.y == 0);
-    bool isCherryLog = (tile.x == 6 && tile.y == 1);
-    bool isCherryLeaf = (tile.x == 7 && tile.y == 1);
+    vec2 atlasSize = vec2(16.0, 16.0);
+    vec2 tileBase = floor(uv * atlasSize);
+    vec2 tileFract = fract(uv * atlasSize);
 
-    // Water: subtle wave distortion + scrolling
+    bool isWater = (tileBase.x == 4.0 && tileBase.y == 0.0);
+    bool isLava  = (tileBase.x == 5.0 && tileBase.y == 0.0);
+    bool isIce   = (tileBase.x == 12.0 && tileBase.y == 1.0);
+    bool isSnow  = (tileBase.x == 9.0 && tileBase.y == 0.0);
+    bool isCherryLog = (tileBase.x == 6.0 && tileBase.y == 1.0);
+    bool isCherryLeaf = (tileBase.x == 7.0 && tileBase.y == 1.0);
+
+    // Water: subtle wave distortion + scrolling (clamped to tile)
     if (isWater) {
-        float wave = sin(uTime * 1.2 + vWorldPos.x * 0.15 + vWorldPos.z * 0.15) * 0.003;
-        float wave2 = cos(uTime * 1.0 + vWorldPos.x * 0.20 - vWorldPos.z * 0.10) * 0.002;
-        uv += vec2(wave + uTime * 0.02, wave2 + uTime * 0.01); // Scroll water
+        float wave = sin(uTime * 1.2 + vWorldPos.x * 0.4 + vWorldPos.z * 0.4) * 0.05;
+        float wave2 = cos(uTime * 1.0 + vWorldPos.x * 0.3 - vWorldPos.z * 0.2) * 0.05;
+        
+        // Scroll texture
+        tileFract += vec2(uTime * 0.1 + wave, uTime * 0.05 + wave2);
     }
 
     // Lava: more aggressive distortion + scrolling
     if (isLava) {
-        float w = sin(uTime * 2.5 + vWorldPos.x * 0.30 + vWorldPos.z * 0.25) * 0.006;
-        float w2 = cos(uTime * 2.0 - vWorldPos.x * 0.20 + vWorldPos.z * 0.35) * 0.006;
-        uv += vec2(w + uTime * 0.01, w2);
+        float w = sin(uTime * 0.5 + vWorldPos.x * 0.1) * 0.1;
+        tileFract += vec2(uTime * 0.02 + w, uTime * 0.01);
     }
 
-    vec4 texColor = texture(uTexture, uv);
+    // Wrap UVs within the tile
+    tileFract = fract(tileFract);
+    
+    vec2 finalUV = (tileBase + tileFract) / atlasSize;
+    vec4 texColor = texture(uTexture, finalUV);
     if (texColor.a < 0.05) discard;
+
+    texColor.rgb *= vColor * uColorTint;
 
     // Snow: make it whiter
     if (isSnow) {

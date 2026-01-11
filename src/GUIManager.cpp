@@ -1,5 +1,6 @@
 #include "GUIManager.hpp"
 #include "Renderer.hpp"
+#include "AudioManager.hpp"
 #include <iostream>
 #include <algorithm>
 #include <vector>
@@ -122,7 +123,7 @@ void GUIManager::applyTheme() {
     }
 }
 
-void GUIManager::showMainMenuBar(bool& showProfiler, bool& showMemory, bool& showECS, bool& showWorldEditor, bool& showSettings) {
+void GUIManager::showMainMenuBar(bool& showProfiler, bool& showMemory, bool& showECS, bool& showWorldEditor, bool& showSettings, bool& showSoundEditor) {
     if (ImGui::BeginMainMenuBar()) {
         if (ImGui::BeginMenu("File")) {
             if (ImGui::MenuItem("Exit", "Esc")) {
@@ -135,6 +136,7 @@ void GUIManager::showMainMenuBar(bool& showProfiler, bool& showMemory, bool& sho
             ImGui::MenuItem("Memory Inspector", nullptr, &showMemory);
             ImGui::MenuItem("ECS Editor", nullptr, &showECS);
             ImGui::MenuItem("World Editor", nullptr, &showWorldEditor);
+            ImGui::MenuItem("Sound Editor", nullptr, &showSoundEditor);
             ImGui::EndMenu();
         }
         if (ImGui::BeginMenu("Options")) {
@@ -143,6 +145,53 @@ void GUIManager::showMainMenuBar(bool& showProfiler, bool& showMemory, bool& sho
         }
         ImGui::EndMainMenuBar();
     }
+}
+
+void GUIManager::showSoundEditor(bool* open) {
+    if (!*open) return;
+    
+    auto& am = AudioManager::getInstance();
+
+    ImGui::SetNextWindowSize(ImVec2(350, 450), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin("Sound Editor", open)) {
+        ImGui::Text("Volume Mixers");
+        ImGui::Separator();
+
+        float master = am.getMasterVolume();
+        if (ImGui::SliderFloat("Master", &master, 0.0f, 1.0f)) am.setMasterVolume(master);
+
+        float music = am.getMusicVolume();
+        if (ImGui::SliderFloat("Music", &music, 0.0f, 1.0f)) am.setMusicVolume(music);
+
+        float mobs = am.getMobVolume();
+        if (ImGui::SliderFloat("Mobs", &mobs, 0.0f, 1.0f)) am.setMobVolume(mobs);
+
+        float blocks = am.getBlockVolume();
+        if (ImGui::SliderFloat("Blocks", &blocks, 0.0f, 1.0f)) am.setBlockVolume(blocks);
+
+        ImGui::Spacing();
+        ImGui::Text("Environmental Sounds");
+        ImGui::Separator();
+
+        bool musicOn = am.isMusicEnabled();
+        if (ImGui::Checkbox("Background Music", &musicOn)) am.setMusicEnabled(musicOn);
+
+        if (ImGui::Button("Next Track")) {
+            // Need to expose startNextMusic or just stop current
+            am.setMusicEnabled(false);
+            am.setMusicEnabled(true);
+        }
+
+        bool mobsOn = am.isMobSoundsEnabled();
+        if (ImGui::Checkbox("Mob Sounds", &mobsOn)) am.setMobSoundsEnabled(mobsOn);
+
+        bool blocksOn = am.isBlockSoundsEnabled();
+        if (ImGui::Checkbox("Block Breaking", &blocksOn)) am.setBlockSoundsEnabled(blocksOn);
+
+        ImGui::Separator();
+        if (ImGui::Button("Close")) *open = false;
+    }
+    ImGui::End();
 }
 
 void GUIManager::showSettings(bool* open, bool& vsync, bool& wireframe, bool& fullscreen, bool& backfaceCulling, Renderer& renderer) {

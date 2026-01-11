@@ -21,12 +21,16 @@ ArenaAllocator::~ArenaAllocator() {
 void* ArenaAllocator::allocate(size_t size, size_t alignment) {
     if (size == 0) return nullptr;
 
-    size_t current_ptr = reinterpret_cast<size_t>(m_buffer) + m_offset;
-    size_t padding = (alignment - (current_ptr % alignment)) % alignment;
+    uintptr_t current_ptr = reinterpret_cast<uintptr_t>(m_buffer) + m_offset;
+    uintptr_t padding = (alignment - (current_ptr % alignment)) % alignment;
     
     if (m_offset + padding + size > m_size) {
-        std::cerr << "ARENA ALLOCATION FAILED: Requested " << size << " bytes, but only " 
-                  << (m_size - m_offset) << " bytes remain in arena." << std::endl;
+        // Optimization: if we are close to the end, we don't spam stderr every tick if requested many times
+        static int last_fail_tick = 0;
+        if (m_allocatedCount - last_fail_tick > 100) {
+            std::cerr << "ARENA FULL: Requested " << size << " bytes" << std::endl;
+            last_fail_tick = m_allocatedCount;
+        }
         return nullptr;
     }
     

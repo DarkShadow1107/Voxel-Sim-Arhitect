@@ -67,6 +67,8 @@ set(SOURCES
     src/MeshBuilder.cpp
     src/Shader.cpp
     src/Texture.cpp
+    src/MobAI.cpp
+    src/AudioManager.cpp
     ${glfw_SOURCE_DIR}/deps/glad_gl.c
     ${imgui_SOURCE_DIR}/imgui.cpp
     ${imgui_SOURCE_DIR}/imgui_draw.cpp

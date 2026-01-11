@@ -1,4 +1,5 @@
 #include "TaskScheduler.hpp"
+#include <iostream>
 
 TaskScheduler::TaskScheduler(size_t threadCount) : m_stop(false), m_activeTasks(0) {
     for (size_t i = 0; i < threadCount; ++i) {
@@ -12,7 +13,13 @@ TaskScheduler::TaskScheduler(size_t threadCount) : m_stop(false), m_activeTasks(
                     task = std::move(m_tasks.front());
                     m_tasks.pop();
                 }
-                task();
+                
+                try {
+                    task();
+                } catch (const std::exception& e) {
+                    std::cerr << "Task error: " << e.what() << std::endl;
+                }
+
                 m_activeTasks--;
                 m_waitCondition.notify_all();
             }

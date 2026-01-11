@@ -28,6 +28,7 @@ struct Vec4 {
 
 inline Vec3 operator+(const Vec3& a, const Vec3& b) { return {a.x + b.x, a.y + b.y, a.z + b.z}; }
 inline Vec3 operator-(const Vec3& a, const Vec3& b) { return {a.x - b.x, a.y - b.y, a.z - b.z}; }
+inline Vec3 operator-(const Vec3& v) { return {-v.x, -v.y, -v.z}; }
 inline Vec3 operator*(const Vec3& v, float s) { return {v.x * s, v.y * s, v.z * s}; }
 inline Vec3 operator/(const Vec3& v, float s) { return {v.x / s, v.y / s, v.z / s}; }
 
@@ -93,6 +94,17 @@ inline Mat4 translate(const Vec3& t) {
     return r;
 }
 
+inline Mat4 rotateX(float angleRadians) {
+    Mat4 r = Mat4::identity();
+    float c = std::cos(angleRadians);
+    float s = std::sin(angleRadians);
+    r.m[5] = c;
+    r.m[6] = s;
+    r.m[9] = -s;
+    r.m[10] = c;
+    return r;
+}
+
 inline Mat4 rotateY(float angleRadians) {
     Mat4 r = Mat4::identity();
     float c = std::cos(angleRadians);
@@ -104,14 +116,14 @@ inline Mat4 rotateY(float angleRadians) {
     return r;
 }
 
-inline Mat4 rotateX(float angleRadians) {
+inline Mat4 rotateZ(float angleRadians) {
     Mat4 r = Mat4::identity();
     float c = std::cos(angleRadians);
     float s = std::sin(angleRadians);
+    r.m[0] = c;
+    r.m[1] = s;
+    r.m[4] = -s;
     r.m[5] = c;
-    r.m[6] = s;
-    r.m[9] = -s;
-    r.m[10] = c;
     return r;
 }
 
@@ -177,3 +189,7 @@ inline Mat4 lookAt(const Vec3& eye, const Vec3& center, const Vec3& up) {
 
     return r;
 }
+
+struct Transform {
+    Vec3 position;
+};

@@ -18,8 +18,9 @@ public:
 
     // Production-grade UI
     void applyTheme();
-    void showMainMenuBar(bool& showProfiler, bool& showMemory, bool& showECS, bool& showWorldEditor, bool& showSettings);
+    void showMainMenuBar(bool& showProfiler, bool& showMemory, bool& showECS, bool& showWorldEditor, bool& showSettings, bool& showSoundEditor);
     void showSettings(bool* open, bool& vsync, bool& wireframe, bool& fullscreen, bool& backfaceCulling, class Renderer& renderer);
+    void showSoundEditor(bool* open);
 
     // GUI Panels
     void showProfiler(float frameTime);

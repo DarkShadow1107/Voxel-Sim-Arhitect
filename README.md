@@ -1,5 +1,7 @@
 # Voxel-Sim Architect
 
+![Game Start](images/Game_Start.png)
+
 Voxel-Sim Architect is a high-performance, feature-rich voxel engine built from the ground up in C++ and OpenGL. It focuses on procedural generation, realistic fluid physics, and advanced visual effects while maintaining high performance through custom memory management and multi-threading.
 
 ## 🌍 World & Procedural Generation
@@ -11,8 +13,19 @@ Voxel-Sim Architect is a high-performance, feature-rich voxel engine built from 
     -   **Desert**: Vast sand dunes and cacti.
     -   **Volcano**: High-altitude peaks with flowing lava and obsidian.
     -   **Plains & Forests**: Rolling hills with Oak, Birch, and Cherry trees.
+
+|                  Forest & Mountains                  |              Polar Biome               |
+| :--------------------------------------------------: | :------------------------------------: |
+| ![Forest Mountain](images/Forest_Mountain_Biome.png) | ![Polar Biome](images/Polar_Biome.png) |
+
+|                 Desert at Night                  |               Volcano Biome                |
+| :----------------------------------------------: | :----------------------------------------: |
+| ![Sand Biome Night](images/Sand_Biome_Night.png) | ![Volcano Biome](images/Volcano_Biome.png) |
+
 -   **Procedural Structures**: Automated generation of trees (Oak, Birch, Cherry, Jungle), cacti, and flowers.
 -   **Ore Generation**: Realistic distribution of Coal, Iron, Gold, and Diamond ores deep underground.
+-   **World Editor**: Real-time terrain and biome tweaking via integrated tools.
+    ![World Editor Menu](images/World_Editor_Menu.png)
 
 ## 💧 Advanced Fluid Physics
 
@@ -20,6 +33,15 @@ Voxel-Sim Architect is a high-performance, feature-rich voxel engine built from 
 -   **Flow Rules**: Fluids prioritize downward movement before spreading horizontally.
 -   **Immediate Updates**: Breaking a block next to a fluid source triggers instant propagation.
 -   **Visual Effects**: Animated textures with scrolling, distortion, and light-bleed (lava glow).
+
+## 🔊 Professional Audio System
+
+-   **Dynamic Ambience**: Positional 3D audio for Water, Lava, and Fire that fades realistically with distance.
+-   **Atmospheric Music**: Procedurally generated melodic music with chord progressions (Maj7/9th) and low-pass filtering.
+-   **Material Physics**: Unique, realistic sound textures for Stone (heavy thud), Wood (hollow resonance), Grass (crispy crunch), and Glass (brittle shatter).
+-   **Weather Audio**: Positional 3D Rain and powerful, cinematic 3D Thunder with sub-bass rumbles.
+-   **In-Game Mixer**: Dedicated Sound Editor for controlling Master, Music, Mobs, and Block volumes in real-time.
+    ![Sound Editor Menu](images/Sound_Editor_Menu.png)
 
 ## ✨ Visuals & Rendering
 
@@ -38,15 +60,18 @@ Voxel-Sim Architect is a high-performance, feature-rich voxel engine built from 
 -   **Inventory & Interaction**:
     -   9-slot hotbar with textured icons.
     -   Block placement and breaking with progressive crack overlays.
-    -   Advancement system (e.g., "Stone Age", "Lumberjack").
+        ![Inventory](images/Inventory.png)
 -   **Physics**: Sliding collision detection with automatic 1.1f step-up for smooth navigation over blocks.
 
 ## 🛠️ Engine Architecture
 
 -   **Custom Memory Management**: Uses **Arena** and **Pool** allocators to minimize fragmentation and overhead.
 -   **Multi-threaded Task Scheduler**: Offloads chunk generation and meshing to worker threads for stutter-free exploration.
--   **Spatial Partitioning**: Optimized data structures for fast raycasting and collision.
--   **Integrated GUI**: Real-time profiling, memory tracking, and world editing via **Dear ImGui**.
+-   **Integrated GUI**: Real-time profiling, memory tracking, and ECS editing.
+
+|                ECS Editor                 |               Engine Profiler                |                   Memory Inspector                    |
+| :---------------------------------------: | :------------------------------------------: | :---------------------------------------------------: |
+| ![ECS Editor](images/ECS_Editor_Menu.png) | ![Profiler](images/Engine_Profiler_Menu.png) | ![Memory Inspector](images/Memory_Inspector_Menu.png) |
 
 ## 🎮 Controls
 
@@ -80,4 +105,4 @@ cmake --build . --config Release
 
 ## 📜 License
 
-MIT
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

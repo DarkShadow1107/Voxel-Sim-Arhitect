@@ -48,6 +48,7 @@ void World::load(const std::string& filename) {
 }
 
 void World::update(const Vec3& playerPos, FastNoiseLite& noise, int seed, float freq, int baseHeight, TaskScheduler* scheduler) {
+    m_newlyGeneratedChunks.clear();
     int px = (int)std::floor(playerPos.x / Chunk::SizeX);
     int pz = (int)std::floor(playerPos.z / Chunk::SizeZ);
 
@@ -63,6 +64,9 @@ void World::update(const Vec3& playerPos, FastNoiseLite& noise, int seed, float 
                 data->mesh = std::make_unique<GLMesh>();
                 
                 data->chunk->generateTerrain(noise, seed, freq, baseHeight, x * Chunk::SizeX, z * Chunk::SizeZ);
+                
+                m_newlyGeneratedChunks.push_back({x, z});
+                
                 data->dirty = true;
                 m_chunks[key] = std::move(data);
             }

@@ -34,7 +34,19 @@ enum BlockType : uint8_t {
     BLOCK_MOSSY_STONE = 24,
     BLOCK_OAK_PLANKS = 25,
     BLOCK_BRICKS = 26,
-    BLOCK_ICE = 27
+    BLOCK_ICE = 27,
+    BLOCK_FIRE = 28
+};
+
+enum BiomeType : uint8_t {
+    BIOME_POLAR = 0,
+    BIOME_SNOWY,
+    BIOME_PLAINS,
+    BIOME_SAVANNA,
+    BIOME_DESERT,
+    BIOME_JUNGLE,
+    BIOME_VOLCANO,
+    BIOME_OCEAN
 };
 
 class Chunk {
@@ -55,6 +67,8 @@ public:
 
     void generateTerrain(FastNoiseLite& noise, int seed, float frequency, int baseHeight, int offsetX, int offsetZ);
     void generateCaves(FastNoiseLite& noise, int seed);
+
+    static BiomeType getBiomeAt(FastNoiseLite& biomeNoise, FastNoiseLite& continentalNoise, float wx, float wz);
 
 private:
     static constexpr int kVoxelCount = SizeX * SizeY * SizeZ;

@@ -39,6 +39,19 @@ void Chunk::set(int x, int y, int z, uint8_t v) {
     m_voxels[(size_t)idx(x, y, z)] = v;
 }
 
+BiomeType Chunk::getBiomeAt(FastNoiseLite& biomeNoise, FastNoiseLite& continentalNoise, float wx, float wz) {
+    if (continentalNoise.GetNoise(wx, wz) < -0.35f) return BIOME_OCEAN;
+    
+    float bn = biomeNoise.GetNoise(wx, wz);
+    if (bn < -0.2f) return BIOME_POLAR;
+    if (bn < 0.05f) return BIOME_SNOWY;
+    if (bn < 0.35f) return BIOME_PLAINS;
+    if (bn < 0.50f) return BIOME_SAVANNA;
+    if (bn < 0.65f) return BIOME_DESERT;
+    if (bn < 0.85f) return BIOME_JUNGLE;
+    return BIOME_VOLCANO;
+}
+
 void Chunk::generateTerrain(FastNoiseLite& noise, int seed, float frequency, int baseHeight, int offsetX, int offsetZ) {
     if (!m_voxels) return;
 
@@ -85,50 +98,42 @@ void Chunk::generateTerrain(FastNoiseLite& noise, int seed, float frequency, int
             const float bn = biomeNoise.GetNoise(wx, wz);
             const float mix = mountainMixNoise.GetNoise(wx, wz);
             
+            BiomeType biome = getBiomeAt(biomeNoise, continentalNoise, wx, wz);
+            bool isPolar = (biome == BIOME_POLAR);
+            bool isSnowy = (biome == BIOME_SNOWY);
+            bool isPlains = (biome == BIOME_PLAINS);
+            bool isSavanna = (biome == BIOME_SAVANNA);
+            bool isDesert = (biome == BIOME_DESERT);
+            bool isJungle = (biome == BIOME_JUNGLE);
+            bool isVolcano = (biome == BIOME_VOLCANO);
+            bool isOcean = (biome == BIOME_OCEAN);
+
             const float h01 = (n + 1.0f) * 0.5f;
             const float mh01 = (mn + 1.0f) * 0.5f;
             
-            // Base height with some variation
+            // Height logic
             int h = baseHeight + (int)(h01 * 15.0f);
             
-            // Biome determination (Larger Polar/Snowy regions)
-            // bn < -0.2: Polar/Ice
-            // -0.2 < bn < 0.1: Snowy/Tundra
-            // 0.1 < bn < 0.4: Plains/Flat
-            // 0.4 < bn < 0.55: Desert
-            // 0.55 < bn < 0.75: Jungle
-            // bn > 0.75: Volcano/Mountainous
-            
-            bool isPolar = (bn < -0.2f);
-            bool isSnowy = (bn >= -0.2f && bn < 0.1f);
-            bool isPlains = (bn >= 0.1f && bn < 0.4f);
-            bool isDesert = (bn >= 0.4f && bn < 0.55f);
-            bool isJungle = (bn >= 0.55f && bn < 0.75f);
-            bool isVolcano = (bn >= 0.75f);
-
-            // Mix mountains: only some areas have high mountains
-            // Volcanoes ALWAYS get height boost
-            if (mix > 0.0f || isVolcano) {
-                if (mh01 > 0.4f || isVolcano) {
-                    float mountainFactor = (mh01 - 0.4f) * 90.0f;
-                    if (isVolcano) mountainFactor = 80.0f + mh01 * 40.0f; // Stronger volcano height
-                    h += (int)mountainFactor;
-                }
-            } else if (isPlains) {
-                h = baseHeight + (int)(h01 * 5.0f); // Very flat plains
-            }
-
-            // Continental/Sea logic
-            if (cn < -0.35f) {
+            if (isOcean) {
                 float seaDepth = std::abs(cn + 0.35f) * 35.0f;
                 h = (int)std::max(1.0f, (float)seaLevel - seaDepth);
+            } else if (isVolcano || (mix > 0.0f && mh01 > 0.4f)) {
+                float mountainFactor = (mh01 - 0.4f) * 90.0f;
+                if (isVolcano) mountainFactor = 80.0f + mh01 * 40.0f; 
+                h += (int)mountainFactor;
+            } else if (isPlains) {
+                h = baseHeight + (int)(h01 * 2.0f); // Very flat Plains
+            } else if (isSavanna) {
+                h = baseHeight + (int)(h01 * 4.0f); // Slightly wavy
+            } else if (isDesert) {
+                h = baseHeight + (int)(h01 * 8.0f); // Wavy dunes
             }
 
             // Rivers
             const float rv = std::abs(riverNoise.GetNoise(wx, wz));
             const float riverWidth = 0.07f;
             const float riverStrength = std::clamp((riverWidth - rv) / riverWidth, 0.0f, 1.0f);
-            if (riverStrength > 0.0f && !isDesert && !isPolar) {
+            if (riverStrength > 0.0f && !isDesert && !isPolar && !isOcean) {
                 const int riverBed = seaLevel - 3;
                 const int targetH = (int)std::round((1.0f - riverStrength) * (float)seaLevel + riverStrength * (float)riverBed);
                 h = std::min(h, std::clamp(targetH, 1, SizeY - 1));
@@ -140,36 +145,65 @@ void Chunk::generateTerrain(FastNoiseLite& noise, int seed, float frequency, int
                 if (y == 0) {
                     set(x, y, z, BLOCK_BEDROCK);
                 } else if (y <= h) {
-                    uint8_t type = BLOCK_DIRT;
-            if (y == h) {
+                    uint8_t type = BLOCK_STONE;
+                    if (y == h) {
                         if (isPolar) {
                             type = (y < seaLevel + 1) ? BLOCK_ICE : BLOCK_SNOW;
-                            // Add some ice patches on top of snow
                             if (y > seaLevel + 5 && (rand() % 100 < 5)) type = BLOCK_ICE;
                         }
                         else if (isSnowy) type = BLOCK_SNOW;
                         else if (isDesert) type = BLOCK_SAND;
-                        else if (y > 105) type = BLOCK_SNOW; // Snowy peaks
+                        else if (isSavanna) type = (rand() % 10 < 3) ? BLOCK_SAND : BLOCK_GRASS; 
+                        else if (y > 105) type = BLOCK_SNOW; 
                         else if (y < seaLevel + 2) type = BLOCK_SAND;
                         else type = BLOCK_GRASS;
                         
                         if (isVolcano && y > 70) type = BLOCK_STONE;
                     }
-                    else if (y < h - 5) {
-                        type = BLOCK_STONE;
-                        if (isVolcano && y > 50 && (rand() % 100 < 8)) type = BLOCK_LAVA;
-                        // Add some ores
+                    else if (y > h - 4) {
+                        type = (isDesert || (isSavanna && (rand()%10<3))) ? BLOCK_SAND : BLOCK_DIRT;
+                    }
+                    else {
+                        // Underground ores
                         int r = rand() % 1000;
                         if (y < 30 && r < 5) type = BLOCK_DIAMOND_ORE;
                         else if (y < 50 && r < 15) type = BLOCK_GOLD_ORE;
                         else if (y < 70 && r < 30) type = BLOCK_IRON_ORE;
                         else if (r < 50) type = BLOCK_COAL_ORE;
+                        else type = BLOCK_STONE;
+
+                        if (isVolcano && y > 50 && (rand() % 100 < 8)) type = BLOCK_LAVA;
                     }
-                    
                     set(x, y, z, type);
                 } else if (y < seaLevel) {
                     if (isPolar) set(x, y, z, (y > seaLevel - 2) ? BLOCK_ICE : BLOCK_WATER);
                     else set(x, y, z, BLOCK_WATER);
+                }
+            }
+
+            // Waterfall generation: check for steep drops near high places
+            if ((isVolcano || mh01 > 0.55f) && !isOcean && h > seaLevel + 10) {
+                // Look for a cliff (neighbors with much lower height)
+                bool potentialWaterfall = false;
+                if ((x > 0 && h - get(x - 1, h, z) > 5) || 
+                    (x < SizeX - 1 && h - get(x + 1, h, z) > 5) ||
+                    (z > 0 && h - get(x, h, z - 1) > 5) ||
+                    (z < SizeZ - 1 && h - get(x, h, z + 1) > 5)) {
+                    potentialWaterfall = true;
+                }
+
+                if (potentialWaterfall && (rand() % 100 < 6)) {
+                   uint8_t liquid = isVolcano ? BLOCK_LAVA : BLOCK_WATER;
+                   set(x, h, z, liquid);
+                   // Create a vertical column
+                   for (int wf = h - 1; wf >= 1; --wf) {
+                       uint8_t current = get(x, wf, z);
+                       if (current == 0 || current == BLOCK_TALL_GRASS || current == BLOCK_FLOWER_RED || current == BLOCK_FLOWER_BLUE || current == BLOCK_DIRT) {
+                           set(x, wf, z, liquid);
+                       } else {
+                           break; 
+                       }
+                   }
                 }
             }
 
@@ -194,6 +228,8 @@ void Chunk::generateTerrain(FastNoiseLite& noise, int seed, float frequency, int
                         if (r < 15) StructureGenerator::generateTree(this, x, h + 1, z, BLOCK_WOOD, BLOCK_LEAVES);
                     } else if (isDesert) {
                         if (r < 4) StructureGenerator::generateCactus(this, x, h + 1, z);
+                    } else if (isSavanna) {
+                        if (r < 5) StructureGenerator::generateTree(this, x, h + 1, z, BLOCK_WOOD, BLOCK_LEAVES); // Acacia-like
                     } else if (isSnowy || isPolar) {
                         if (r < 6) StructureGenerator::generateTree(this, x, h + 1, z, BLOCK_WOOD, BLOCK_SNOW);
                     } else if (!isPlains || r < 5) {

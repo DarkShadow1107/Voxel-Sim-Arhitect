@@ -32,6 +32,13 @@ public:
     void setBlock(int x, int y, int z, uint8_t type);
     uint8_t getBlock(int x, int y, int z) const;
     bool isSolid(int x, int y, int z) const;
+    
+    Chunk* getChunk(int x, int z) const {
+        uint64_t key = getChunkKey(x, z);
+        auto it = m_chunks.find(key);
+        if (it != m_chunks.end()) return it->second->chunk.get();
+        return nullptr;
+    }
 
     struct RaycastResult {
         bool hit = false;
@@ -40,12 +47,16 @@ public:
     };
     RaycastResult raycast(const Vec3& origin, const Vec3& direction, float maxDist);
 
+    const std::vector<std::pair<int, int>>& getNewChunks() const { return m_newlyGeneratedChunks; }
+    void clearNewChunks() { m_newlyGeneratedChunks.clear(); }
+
     int getRenderDistance() const { return m_renderDistance; }
     void setRenderDistance(int d) { m_renderDistance = d; }
     size_t getChunkCount() const { return m_chunks.size(); }
 
 private:
     std::unordered_map<uint64_t, std::unique_ptr<ChunkData>> m_chunks;
+    std::vector<std::pair<int, int>> m_newlyGeneratedChunks;
     int m_renderDistance = 4;
 
     struct MeshResult {

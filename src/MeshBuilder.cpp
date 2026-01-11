@@ -171,17 +171,14 @@ std::vector<Vertex> MeshBuilder::buildGreedyMesh(const Chunk& chunk) {
     return verts;
 }
 
-void MeshBuilder::addFace(Vec3 p1, Vec3 p2, Vec3 p3, Vec3 p4, Vec3 normal, float u1, float v1, float u2, float v2, float ao) {
-    // We use a simple white color for entities for now, or we could pass color as well
-    float r = 1.0f * ao;
-    float g = 1.0f * ao;
-    float b = 1.0f * ao;
+void MeshBuilder::addFace(Vec3 p1, Vec3 p2, Vec3 p3, Vec3 p4, Vec3 normal, float u1, float v1, float u2, float v2, float r, float g, float b) {
+    float light = 0.7f + std::abs(normal.y) * 0.3f;
 
-    m_vertices.push_back(Vertex{p1.x, p1.y, p1.z, normal.x, normal.y, normal.z, r, g, b, u1, v1});
-    m_vertices.push_back(Vertex{p2.x, p2.y, p2.z, normal.x, normal.y, normal.z, r, g, b, u2, v1});
-    m_vertices.push_back(Vertex{p3.x, p3.y, p3.z, normal.x, normal.y, normal.z, r, g, b, u2, v2});
+    m_vertices.push_back(Vertex{p1.x, p1.y, p1.z, normal.x, normal.y, normal.z, r * light, g * light, b * light, u1, v1});
+    m_vertices.push_back(Vertex{p2.x, p2.y, p2.z, normal.x, normal.y, normal.z, r * light, g * light, b * light, u2, v1});
+    m_vertices.push_back(Vertex{p3.x, p3.y, p3.z, normal.x, normal.y, normal.z, r * light, g * light, b * light, u2, v2});
 
-    m_vertices.push_back(Vertex{p1.x, p1.y, p1.z, normal.x, normal.y, normal.z, r, g, b, u1, v1});
-    m_vertices.push_back(Vertex{p3.x, p3.y, p3.z, normal.x, normal.y, normal.z, r, g, b, u2, v2});
-    m_vertices.push_back(Vertex{p4.x, p4.y, p4.z, normal.x, normal.y, normal.z, r, g, b, u1, v2});
+    m_vertices.push_back(Vertex{p1.x, p1.y, p1.z, normal.x, normal.y, normal.z, r * light, g * light, b * light, u1, v1});
+    m_vertices.push_back(Vertex{p3.x, p3.y, p3.z, normal.x, normal.y, normal.z, r * light, g * light, b * light, u2, v2});
+    m_vertices.push_back(Vertex{p4.x, p4.y, p4.z, normal.x, normal.y, normal.z, r * light, g * light, b * light, u1, v2});
 }
