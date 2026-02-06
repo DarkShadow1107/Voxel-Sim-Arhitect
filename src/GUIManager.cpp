@@ -1,17 +1,45 @@
 #include "GUIManager.hpp"
 #include "Renderer.hpp"
 #include "AudioManager.hpp"
+#include "Registry.hpp"
 #include <iostream>
 #include <algorithm>
 #include <vector>
 #include <thread>
+#include <map>
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
 #include <psapi.h>
+#include <commdlg.h>
 #endif
+
+namespace {
+    std::string openFileDialog() {
+#ifdef _WIN32
+        OPENFILENAMEA ofn;
+        char szFile[260] = { 0 };
+        ZeroMemory(&ofn, sizeof(ofn));
+        ofn.lStructSize = sizeof(ofn);
+        ofn.hwndOwner = NULL;
+        ofn.lpstrFile = szFile;
+        ofn.nMaxFile = 260;
+        ofn.lpstrFilter = "Audio Files (*.wav;*.mp3)\0*.wav;*.mp3\0All Files (*.*)\0*.*\0";
+        ofn.nFilterIndex = 1;
+        ofn.lpstrFileTitle = NULL;
+        ofn.nMaxFileTitle = 0;
+        ofn.lpstrInitialDir = NULL;
+        ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR;
+
+        if (GetOpenFileNameA(&ofn) == TRUE) {
+            return std::string(szFile);
+        }
+#endif
+        return "";
+    }
+}
 
 #include <glad/gl.h>
 #include <GLFW/glfw3.h>
@@ -123,7 +151,7 @@ void GUIManager::applyTheme() {
     }
 }
 
-void GUIManager::showMainMenuBar(bool& showProfiler, bool& showMemory, bool& showECS, bool& showWorldEditor, bool& showSettings, bool& showSoundEditor) {
+void GUIManager::showMainMenuBar(bool& showProfiler, bool& showMemory, bool& showECS, bool& showWorldEditor, bool& showSettings, bool& showSoundEditor, bool& showBlockDesigner, bool& showMobDesigner, bool& showInteractionEditor) {
     if (ImGui::BeginMainMenuBar()) {
         if (ImGui::BeginMenu("File")) {
             if (ImGui::MenuItem("Exit", "Esc")) {
@@ -131,12 +159,18 @@ void GUIManager::showMainMenuBar(bool& showProfiler, bool& showMemory, bool& sho
             }
             ImGui::EndMenu();
         }
+        if (ImGui::BeginMenu("Designers")) {
+            ImGui::MenuItem("Block Designer", nullptr, &showBlockDesigner);
+            ImGui::MenuItem("Mob Designer", nullptr, &showMobDesigner);
+            ImGui::MenuItem("Sound Manager", nullptr, &showSoundEditor);
+            ImGui::MenuItem("Interactions", nullptr, &showInteractionEditor);
+            ImGui::EndMenu();
+        }
         if (ImGui::BeginMenu("View")) {
             ImGui::MenuItem("Profiler", nullptr, &showProfiler);
             ImGui::MenuItem("Memory Inspector", nullptr, &showMemory);
             ImGui::MenuItem("ECS Editor", nullptr, &showECS);
             ImGui::MenuItem("World Editor", nullptr, &showWorldEditor);
-            ImGui::MenuItem("Sound Editor", nullptr, &showSoundEditor);
             ImGui::EndMenu();
         }
         if (ImGui::BeginMenu("Options")) {
@@ -146,6 +180,140 @@ void GUIManager::showMainMenuBar(bool& showProfiler, bool& showMemory, bool& sho
         ImGui::EndMainMenuBar();
     }
 }
+
+void GUIManager::showBlockDesigner(bool* open) {
+    if (!*open) return;
+    if (!ImGui::Begin("Block Designer", open)) {
+        ImGui::End();
+        return;
+    }
+
+    auto& blocks = GameRegistry::getInstance().getAllBlocks();
+    static uint8_t selectedId = 1;
+
+    ImGui::BeginChild("BlockList", ImVec2(200, 0), true);
+    for (auto& [id, def] : blocks) {
+        if (id == 0) continue;
+        if (ImGui::Selectable(def.name.c_str(), selectedId == id)) {
+            selectedId = id;
+        }
+    }
+    if (ImGui::Button("Add New Block")) {
+        uint8_t nextId = 1;
+        while (blocks.count(nextId)) nextId++;
+        GameRegistry::getInstance().registerBlock({nextId, "New Block", {1,1,1}, 0, 0});
+        selectedId = nextId;
+    }
+    ImGui::EndChild();
+
+    ImGui::SameLine();
+
+    ImGui::BeginGroup();
+    auto& def = blocks[selectedId];
+    char nameBuf[64];
+    strncpy(nameBuf, def.name.c_str(), 63);
+    nameBuf[63] = '\0';
+    if (ImGui::InputText("Name", nameBuf, 64)) def.name = nameBuf;
+    
+    ImGui::ColorEdit3("Color Tint", &def.color.x);
+    ImGui::InputInt("Texture X", &def.texX);
+    ImGui::InputInt("Texture Y", &def.texY);
+
+    ImGui::Text("Preview:");
+    if (m_atlasID) {
+        float size = 64.0f;
+        float uv_step = 1.0f / 16.0f;
+        ImVec2 uv0 = ImVec2(def.texX * uv_step, def.texY * uv_step);
+        ImVec2 uv1 = ImVec2((def.texX + 1) * uv_step, (def.texY + 1) * uv_step);
+        // Using ImageWithBg for the newer ImGui version (1.91.9+) which moved tint_col there
+        ImGui::ImageWithBg((ImTextureID)(uintptr_t)m_atlasID, ImVec2(size, size), uv0, uv1, ImVec4(0,0,0,0), ImVec4(def.color.x, def.color.y, def.color.z, 1.0f));
+    }
+
+    ImGui::Checkbox("Transparent", &def.isTransparent);
+    ImGui::Checkbox("Liquid (Water-like)", &def.isLiquid);
+    
+    ImGui::Separator();
+    ImGui::Text("Sounds");
+    ImGui::Text("Break: %s", def.breakSound.empty() ? "None" : def.breakSound.c_str());
+    ImGui::Text("Step: %s", def.stepSound.empty() ? "None" : def.stepSound.c_str());
+
+    ImGui::EndGroup();
+
+    ImGui::End();
+}
+
+void GUIManager::showMobDesigner(bool* open) {
+    if (!*open) return;
+    if (!ImGui::Begin("Mob Designer", open)) {
+        ImGui::End();
+        return;
+    }
+
+    auto& mobs = GameRegistry::getInstance().getAllMobs();
+    static MobType selectedType = MOB_COW;
+
+    ImGui::BeginChild("MobList", ImVec2(200, 0), true);
+    for (auto& [type, def] : mobs) {
+        if (ImGui::Selectable(def.name.c_str(), selectedType == type)) {
+            selectedType = type;
+        }
+    }
+    if (ImGui::Button("Add New Mob")) {
+        int nextId = (int)MOB_COUNT;
+        while (mobs.count((MobType)nextId)) nextId++;
+        GameRegistry::getInstance().registerMob({(MobType)nextId, "New Mob", 10.0f, 2.0f});
+        selectedType = (MobType)nextId;
+    }
+    ImGui::EndChild();
+
+    ImGui::SameLine();
+
+    ImGui::BeginGroup();
+    auto& def = mobs[selectedType];
+    char nameBuf[64];
+    strncpy(nameBuf, def.name.c_str(), 63);
+    nameBuf[63] = '\0';
+    if (ImGui::InputText("Name", nameBuf, 64)) def.name = nameBuf;
+    
+    ImGui::SliderFloat("Health", &def.maxHp, 1.0f, 100.0f);
+    ImGui::SliderFloat("Speed", &def.speed, 0.5f, 10.0f);
+    ImGui::Checkbox("Aquatic", &def.isAquatic);
+    ImGui::Checkbox("Hostile", &def.isHostile);
+    
+    ImGui::Separator();
+    ImGui::Text("Model Blueprint Preview:");
+    ImGui::BeginChild("MobPreview", ImVec2(0, 100), true);
+    ImGui::Text("Scale: [1.0, 1.0, 1.0]");
+    ImGui::Text("Parts: Body, Head, 4x Legs");
+    if (def.isAquatic) ImGui::Text("Material: Aquatic/Submerged");
+    if (def.isHostile) ImGui::Text("Aura: Hostile/Red");
+    ImGui::EndChild();
+    
+    ImGui::Separator();
+    ImGui::Text("Model: Standard Voxel");
+
+    ImGui::EndGroup();
+
+    ImGui::End();
+}
+
+void GUIManager::showInteractionEditor(bool* open) {
+    if (!*open) return;
+    if (!ImGui::Begin("Interaction Editor", open)) {
+        ImGui::End();
+        return;
+    }
+    ImGui::Text("Interaction Types:");
+    ImGui::BulletText("Left Click: Break Block");
+    ImGui::BulletText("Right Click: Place Block");
+    ImGui::BulletText("E: Interact with Mob");
+    
+    static int interactionRange = 5;
+    ImGui::SliderInt("Interaction Range", &interactionRange, 1, 10);
+    
+    ImGui::End();
+}
+
 
 void GUIManager::showSoundEditor(bool* open) {
     if (!*open) return;
@@ -187,6 +355,34 @@ void GUIManager::showSoundEditor(bool* open) {
 
         bool blocksOn = am.isBlockSoundsEnabled();
         if (ImGui::Checkbox("Block Breaking", &blocksOn)) am.setBlockSoundsEnabled(blocksOn);
+
+        ImGui::Separator();
+        ImGui::Text("Sound Studio");
+        static char soundPath[256] = "";
+        static float pitch = 1.0f;
+        static float vol = 1.0f;
+        ImGui::InputText("File Path", soundPath, 256);
+        ImGui::SameLine();
+        if (ImGui::Button("Browse...")) {
+            std::string path = openFileDialog();
+            if (!path.empty()) {
+                // Try to make it relative to project root if possible
+                strncpy(soundPath, path.c_str(), 255);
+            }
+        }
+        ImGui::SliderFloat("Pitch Alteration", &pitch, 0.5f, 2.0f);
+        ImGui::SliderFloat("Volume Alteration", &vol, 0.0f, 1.0f);
+        
+        if (ImGui::Button("Preview Adjusted sound")) {
+            if (strlen(soundPath) > 0) {
+                am.playSoundWithPitch(soundPath, vol, pitch);
+            }
+        }
+        
+        ImGui::SameLine();
+        if (ImGui::Button("Set as Block Break")) {
+            // Mapping logic
+        }
 
         ImGui::Separator();
         if (ImGui::Button("Close")) *open = false;

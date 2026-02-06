@@ -1,4 +1,5 @@
 #include "MobAI.hpp"
+#include "Registry.hpp"
 #include <algorithm>
 #include <cstdlib>
 #include "FastNoiseLite.h"
@@ -27,6 +28,8 @@ void MobAI::update(Mob& mob, Transform& transform, World& world, double dt, Vec3
             case MOB_CHICKEN: typeStr = "chicken"; break;
             case MOB_RABBIT: typeStr = "rabbit"; break;
             case MOB_SHEEP: typeStr = "sheep"; break;
+            case MOB_DOG: typeStr = "dog"; break;
+            case MOB_CAT: typeStr = "cat"; break;
             default: break;
         }
         if (!typeStr.empty()) {
@@ -35,8 +38,58 @@ void MobAI::update(Mob& mob, Transform& transform, World& world, double dt, Vec3
         mob.ambientSoundTimer = 10.0f + (float)(std::rand() % 20000) / 1000.0f; // 10-30 seconds
     }
 
-    // 2. Wander Logic (Minecraft-like idle/move states)
-    handleWander(mob, dt);
+    // AI State Machine
+    float distToPlayer = length(transform.position - viewerPos);
+    
+    // Simple reaction to player
+    if (mob.state != Mob::FLEE) {
+        if (distToPlayer < 5.0f && (mob.type == MOB_DOG || mob.type == MOB_CAT)) {
+            mob.state = Mob::FOLLOW;
+        } else if (distToPlayer < 3.0f && !isAquatic(mob.type) && mob.type != MOB_BIRD) {
+            // Skittish animals flee
+            if (mob.type == MOB_RABBIT || mob.type == MOB_CHICKEN || mob.type == MOB_BIRD) {
+                mob.state = Mob::FLEE;
+                mob.targetPos = transform.position + (transform.position - viewerPos) * 2.0f;
+                mob.stateTimer = 3.0f;
+            }
+        }
+    }
+
+    switch (mob.state) {
+        case Mob::IDLE:
+        case Mob::WANDER:
+            handleWander(mob, dt);
+            break;
+        case Mob::FOLLOW:
+            if (distToPlayer > 10.0f) {
+                mob.state = Mob::WANDER;
+            } else if (distToPlayer > 2.0f) {
+                mob.isMoving = true;
+                Vec3 dir = normalize(viewerPos - transform.position);
+                float targetYaw = std::atan2(dir.x, dir.z) * 57.2957795f;
+                float yawDelta = targetYaw - mob.yawDeg;
+                while (yawDelta > 180.0f) yawDelta -= 360.0f;
+                while (yawDelta < -180.0f) yawDelta += 360.0f;
+                mob.yawDeg += yawDelta * std::min(1.0f, (float)dt * 5.0f);
+            } else {
+                mob.isMoving = false;
+            }
+            break;
+        case Mob::FLEE:
+            mob.stateTimer -= (float)dt;
+            if (mob.stateTimer <= 0.0f) {
+                mob.state = Mob::WANDER;
+            } else {
+                mob.isMoving = true;
+                Vec3 dir = normalize(transform.position - viewerPos); // Run away
+                float targetYaw = std::atan2(dir.x, dir.z) * 57.2957795f;
+                float yawDelta = targetYaw - mob.yawDeg;
+                while (yawDelta > 180.0f) yawDelta -= 360.0f;
+                while (yawDelta < -180.0f) yawDelta += 360.0f;
+                mob.yawDeg += yawDelta * std::min(1.0f, (float)dt * 6.0f);
+            }
+            break;
+    }
 
     // 3. Environmental checks (water, lava, falling)
     handleEnvironment(mob, transform, world, dt);
@@ -48,6 +101,7 @@ void MobAI::update(Mob& mob, Transform& transform, World& world, double dt, Vec3
     if (mob.isMoving || isAquatic(mob.type) || mob.type == MOB_BIRD) {
         float animSpeed = isAquatic(mob.type) ? 3.0f : 5.0f;
         if (mob.type == MOB_BIRD) animSpeed = 8.0f;
+        if (mob.state == Mob::FLEE) animSpeed *= 1.5f;
         mob.animTime += (float)dt * animSpeed;
     }
 }
@@ -170,16 +224,7 @@ void MobAI::handleMovement(Mob& mob, Transform& transform, World& world, double 
 }
 
 float MobAI::getBaseSpeed(MobType type) {
-    switch (type) {
-        case MOB_CHICKEN: return 2.2f;
-        case MOB_RABBIT: return 3.5f;
-        case MOB_CAT: return 2.8f;
-        case MOB_DOG: return 3.0f;
-        case MOB_BIRD: return 4.0f;
-        case MOB_FISH:
-        case MOB_SALMON: return 2.5f;
-        default: return 2.0f;
-    }
+    return GameRegistry::getInstance().getMob(type).speed;
 }
 
 Vec3 MobAI::getHalfExtents(MobType type) {
@@ -195,7 +240,7 @@ Vec3 MobAI::getHalfExtents(MobType type) {
 }
 
 bool MobAI::isAquatic(MobType type) {
-    return type == MOB_FISH || type == MOB_SALMON || type == MOB_OCTOPUS;
+    return GameRegistry::getInstance().getMob(type).isAquatic;
 }
 
 Vec3 MobAI::getSheepColor(SheepColor color) {

@@ -23,6 +23,7 @@
 #include "Texture.hpp"
 #include "World.hpp"
 #include "MobAI.hpp"
+#include "Registry.hpp"
 
 #include "FastNoiseLite.h"
 
@@ -51,6 +52,7 @@ struct ChatMessage {
 
 int main() {
     std::cout << "Voxel-Sim Architect Engine Starting..." << std::endl;
+    GameRegistry::getInstance().init();
 
     // 1. Memory Management
     ArenaAllocator mainAllocator(1024 * 1024 * 100); // 100MB Arena
@@ -99,6 +101,7 @@ int main() {
 
     Texture atlas;
     atlas.generateAtlas();
+    gui.setAtlasTextureID(atlas.getID());
 
     // Game State
     WeatherType currentWeather = WEATHER_CLEAR;
@@ -119,6 +122,9 @@ int main() {
     bool showWorldEditor = true;
     bool showSettings = false;
     bool showSoundEditor = false;
+    bool showBlockDesigner = false;
+    bool showMobDesigner = false;
+    bool showInteractionEditor = false;
     bool vsync = true;
     bool wireframe = false;
     bool backfaceCulling = false;
@@ -369,7 +375,7 @@ int main() {
         // Editor-style dockspace (production-feel).
         ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport());
         
-        gui.showMainMenuBar(showProfiler, showMemory, showECS, showWorldEditor, showSettings, showSoundEditor);
+        gui.showMainMenuBar(showProfiler, showMemory, showECS, showWorldEditor, showSettings, showSoundEditor, showBlockDesigner, showMobDesigner, showInteractionEditor);
 
         if (showProfiler) gui.showProfiler(deltaMs);
         if (showMemory) {
@@ -378,6 +384,9 @@ int main() {
         }
         if (showECS) gui.showECSEditor();
         gui.showSoundEditor(&showSoundEditor);
+        gui.showBlockDesigner(&showBlockDesigner);
+        gui.showMobDesigner(&showMobDesigner);
+        gui.showInteractionEditor(&showInteractionEditor);
         if (showSettings) gui.showSettings(&showSettings, vsync, wireframe, fullscreen, backfaceCulling, renderer);
 
         // Viewport Window
@@ -425,18 +434,10 @@ int main() {
                     }
 
                     // Block Icon (Texture)
-                    int tx = 0, ty = 0;
-                    switch(i) {
-                        case 1: tx = 0; ty = 0; break; // Dirt
-                        case 2: tx = 1; ty = 0; break; // Grass
-                        case 3: tx = 3; ty = 0; break; // Stone
-                        case 4: tx = 4; ty = 0; break; // Water
-                        case 5: tx = 5; ty = 0; break; // Lava
-                        case 6: tx = 6; ty = 0; break; // Wood
-                        case 7: tx = 7; ty = 0; break; // Leaves
-                        case 8: tx = 8; ty = 0; break; // Sand
-                        case 9: tx = 9; ty = 0; break; // Snow
-                    }
+                    const auto& def = GameRegistry::getInstance().getBlock(i);
+                    int tx = def.texX;
+                    int ty = def.texY;
+                    
                     ImVec2 uv0 = ImVec2(tx / 16.0f, ty / 16.0f);
                     ImVec2 uv1 = ImVec2((tx + 1) / 16.0f, (ty + 1) / 16.0f);
                     drawList->AddImage(texId, ImVec2(slotPos.x + 4, slotPos.y + 4), ImVec2(slotEnd.x - 4, slotEnd.y - 4), uv0, uv1);
@@ -519,10 +520,12 @@ int main() {
 
             ImGui::Separator();
             ImGui::Text("Block Palette:");
-            const char* blockNames[] = { "Air", "Dirt", "Grass", "Stone", "Water", "Lava", "Wood", "Leaves", "Sand", "Snow", "Bedrock", "Flower R", "Flower B", "Tall Grass", "Glass", "Coal", "Iron", "Gold", "Diamond", "Birch W", "Birch L", "Cherry W", "Cherry L", "Cobble", "Planks", "Bricks" };
-            for (int i = 1; i < 26; ++i) {
-                if (ImGui::RadioButton(blockNames[i], selectedBlock == i)) selectedBlock = i;
-                if (i % 4 != 0) ImGui::SameLine();
+            auto& blocks = GameRegistry::getInstance().getAllBlocks();
+            int count = 0;
+            for (auto& [id, def] : blocks) {
+                if (id == 0) continue;
+                if (ImGui::RadioButton(def.name.c_str(), selectedBlock == id)) selectedBlock = id;
+                if (++count % 4 != 0) ImGui::SameLine();
             }
             ImGui::NewLine();
 
@@ -560,38 +563,10 @@ int main() {
             
             ImGui::BeginChild("InvScroll", ImVec2(0, 0), true);
             for (int type = 1; type <= BLOCK_ICE; ++type) {
-                int tx = 0, ty = 0;
-                const char* name = "Unknown";
-                switch (type) {
-                    case BLOCK_DIRT: tx = 0; ty = 0; name = "Dirt"; break;
-                    case BLOCK_GRASS: tx = 1; ty = 0; name = "Grass"; break;
-                    case BLOCK_STONE: tx = 3; ty = 0; name = "Stone"; break;
-                    case BLOCK_WATER: tx = 4; ty = 0; name = "Water"; break;
-                    case BLOCK_LAVA: tx = 5; ty = 0; name = "Lava"; break;
-                    case BLOCK_WOOD: tx = 6; ty = 0; name = "Oak Log"; break;
-                    case BLOCK_LEAVES: tx = 7; ty = 0; name = "Oak Leaves"; break;
-                    case BLOCK_SAND: tx = 8; ty = 0; name = "Sand"; break;
-                    case BLOCK_SNOW: tx = 9; ty = 0; name = "Snow"; break;
-                    case BLOCK_BEDROCK: tx = 10; ty = 0; name = "Bedrock"; break;
-                    case BLOCK_FLOWER_RED: tx = 11; ty = 0; name = "Red Flower"; break;
-                    case BLOCK_FLOWER_BLUE: tx = 12; ty = 0; name = "Blue Flower"; break;
-                    case BLOCK_TALL_GRASS: tx = 13; ty = 0; name = "Tall Grass"; break;
-                    case BLOCK_GLASS: tx = 14; ty = 0; name = "Glass"; break;
-                    case BLOCK_COAL_ORE: tx = 0; ty = 1; name = "Coal Ore"; break;
-                    case BLOCK_IRON_ORE: tx = 1; ty = 1; name = "Iron Ore"; break;
-                    case BLOCK_GOLD_ORE: tx = 2; ty = 1; name = "Gold Ore"; break;
-                    case BLOCK_DIAMOND_ORE: tx = 3; ty = 1; name = "Diamond Ore"; break;
-                    case BLOCK_BIRCH_WOOD: tx = 4; ty = 1; name = "Birch Log"; break;
-                    case BLOCK_BIRCH_LEAVES: tx = 5; ty = 1; name = "Birch Leaves"; break;
-                    case BLOCK_CHERRY_WOOD: tx = 6; ty = 1; name = "Cherry Log"; break;
-                    case BLOCK_CHERRY_LEAVES: tx = 7; ty = 1; name = "Cherry Leaves"; break;
-                    case BLOCK_COBBLESTONE: tx = 8; ty = 1; name = "Cobblestone"; break;
-                    case BLOCK_MOSSY_STONE: tx = 9; ty = 1; name = "Mossy Stone"; break;
-                    case BLOCK_OAK_PLANKS: tx = 10; ty = 1; name = "Oak Planks"; break;
-                    case BLOCK_BRICKS: tx = 11; ty = 1; name = "Bricks"; break;
-                    case BLOCK_ICE: tx = 12; ty = 1; name = "Ice"; break;
-                    default: tx = 0; ty = 0; name = "Block"; break;
-                }
+                const auto& def = GameRegistry::getInstance().getBlock(type);
+                int tx = def.texX;
+                int ty = def.texY;
+                const char* name = def.name.c_str();
 
                 ImVec2 uv0 = ImVec2(tx / 16.0f, ty / 16.0f);
                 ImVec2 uv1 = ImVec2((tx + 1) / 16.0f, (ty + 1) / 16.0f);

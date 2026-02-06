@@ -32,17 +32,18 @@ void main() {
 
     // Water: subtle wave distortion + scrolling (clamped to tile)
     if (isWater) {
-        float wave = sin(uTime * 1.2 + vWorldPos.x * 0.4 + vWorldPos.z * 0.4) * 0.05;
-        float wave2 = cos(uTime * 1.0 + vWorldPos.x * 0.3 - vWorldPos.z * 0.2) * 0.05;
+        float wave = sin(uTime * 1.5 + vWorldPos.x * 0.8 + vWorldPos.z * 0.8) * 0.04;
+        float wave2 = cos(uTime * 1.2 + vWorldPos.x * 0.5 - vWorldPos.z * 0.6) * 0.04;
         
-        // Scroll texture
-        tileFract += vec2(uTime * 0.1 + wave, uTime * 0.05 + wave2);
+        // Scroll texture with two layers for "depth"
+        tileFract += vec2(uTime * 0.12 + wave, uTime * 0.08 + wave2);
     }
 
     // Lava: more aggressive distortion + scrolling
     if (isLava) {
-        float w = sin(uTime * 0.5 + vWorldPos.x * 0.1) * 0.1;
-        tileFract += vec2(uTime * 0.02 + w, uTime * 0.01);
+        float speed = uTime * 0.15;
+        float noise = sin(vWorldPos.x * 0.5 + speed) * cos(vWorldPos.z * 0.5 + speed);
+        tileFract += vec2(speed * 0.1 + noise * 0.05, speed * 0.05);
     }
 
     // Wrap UVs within the tile
@@ -103,10 +104,15 @@ void main() {
     vec3 emissive = vec3(0.0);
     if (isWater) {
         float fresnel = pow(1.0 - max(dot(viewDir, n), 0.0), 3.0);
-        float spec = pow(max(dot(reflect(-l, n), viewDir), 0.0), 64.0);
-        ambient += vec3(0.15) * nightFactor;
-        emissive += vec3(0.1, 0.4, 0.7) * fresnel + vec3(0.4) * spec;
-        alphaOut = 0.50; // Even more translucent
+        float spec = pow(max(dot(reflect(-l, n), viewDir), 0.0), 128.0);
+        ambient += vec3(0.1, 0.2, 0.4) * nightFactor;
+        
+        // Caustics-like effect
+        float caustics = sin(vWorldPos.x * 2.0 + uTime) * cos(vWorldPos.z * 2.0 + uTime);
+        caustics = pow(max(caustics, 0.0), 4.0);
+        emissive += vec3(0.2, 0.5, 0.9) * fresnel + vec3(0.8) * spec + vec3(0.4, 0.6, 1.0) * caustics;
+        
+        alphaOut = 0.6; 
     }
 
     // Ice: translucent
@@ -116,10 +122,12 @@ void main() {
         emissive += vec3(0.5, 0.7, 1.0) * spec;
     }
 
-    // Lava: emissive glow (ignores night factor)
+    // Lava: emissive animated glow
     if (isLava) {
-        float glow = 0.8 + 0.4 * sin(uTime * 3.0 + vWorldPos.x * 0.5 + vWorldPos.z * 0.5);
-        emissive += vec3(1.0, 0.4, 0.0) * glow * 1.5; // Brighter, more yellow-orange
+        float pulse = 0.8 + 0.2 * sin(uTime * 2.5);
+        float flow = sin(vWorldPos.x * 0.4 + uTime) * cos(vWorldPos.z * 0.4 + uTime);
+        emissive += vec3(1.0, 0.3, 0.0) * 1.8 * pulse; // Deep orange
+        emissive += vec3(1.0, 0.8, 0.0) * max(flow, 0.0) * 0.5; // Bright yellow flow highlights
         alphaOut = 1.0;
     }
 

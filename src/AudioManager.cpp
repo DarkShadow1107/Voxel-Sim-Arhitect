@@ -1,6 +1,7 @@
 #define MA_IMPLEMENTATION
 #include "miniaudio.h"
 #include "AudioManager.hpp"
+#include "Registry.hpp"
 #include <iostream>
 #include <filesystem>
 
@@ -150,6 +151,20 @@ void AudioManager::playSound(const std::string& filePath, float volume) {
     ma_engine_play_sound(engine, fullPath.string().c_str(), NULL);
 }
 
+void AudioManager::playSoundWithPitch(const std::string& filePath, float volume, float pitch) {
+    if (!engine) return;
+    
+    std::filesystem::path fullPath = std::filesystem::path(projectRoot) / filePath;
+    if (!std::filesystem::exists(fullPath)) return;
+
+    ma_sound* sound = new ma_sound(); 
+    if (ma_sound_init_from_file(engine, fullPath.string().c_str(), MA_SOUND_FLAG_DECODE, NULL, NULL, sound) == MA_SUCCESS) {
+        ma_sound_set_volume(sound, volume * masterVolume);
+        ma_sound_set_pitch(sound, pitch);
+        ma_sound_start(sound);
+    }
+}
+
 void AudioManager::playSoundAt(const std::string& filePath, Vec3 position, Vec3 listenerPos, float volume, float rollOff) {
     if (!engine) return;
 
@@ -187,6 +202,13 @@ void AudioManager::playAmbientMobSound(const std::string& mobType, Vec3 position
 
 void AudioManager::playBlockBreakSound(uint8_t blockType, Vec3 position, Vec3 listenerPos) {
     if (!blockSoundsEnabled) return;
+    
+    const auto& bdef = GameRegistry::getInstance().getBlock(blockType);
+    if (!bdef.breakSound.empty()) {
+        playSoundAt(bdef.breakSound, position, listenerPos, blockVolume);
+        return;
+    }
+
     std::string path = "assets/sounds/block_break.wav";
     if (blockSounds.count(blockType)) {
         path = blockSounds[blockType];

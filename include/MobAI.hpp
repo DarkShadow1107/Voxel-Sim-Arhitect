@@ -36,6 +36,7 @@ enum SheepColor {
 struct Mob {
     MobType type;
     float hp;
+    float maxHp;
     float wanderTimer;
     float wanderYawDeg;
     float yawDeg;
@@ -45,10 +46,16 @@ struct Mob {
     float onFireSeconds;
     float ambientSoundTimer;
     SheepColor sheepColor;
+    
+    // Engine Improvements: Simple State Machine
+    enum State { IDLE, WANDER, FOLLOW, FLEE } state;
+    Vec3 targetPos;
+    float stateTimer;
 
-    Mob() : type(MOB_COW), hp(10.0f), wanderTimer(0.0f), wanderYawDeg(0.0f), 
+    Mob() : type(MOB_COW), hp(10.0f), maxHp(10.0f), wanderTimer(0.0f), wanderYawDeg(0.0f), 
            yawDeg(0.0f), velocity{0,0,0}, animTime(0.0f), isMoving(false), 
-           onFireSeconds(0.0f), ambientSoundTimer(0.0f), sheepColor(COLOR_WHITE) {}
+           onFireSeconds(0.0f), ambientSoundTimer(0.0f), sheepColor(COLOR_WHITE),
+           state(IDLE), targetPos{0,0,0}, stateTimer(0.0f) {}
 };
 
 class FastNoiseLite;

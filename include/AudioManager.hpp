@@ -30,6 +30,8 @@ public:
     float getBlockVolume() const { return blockVolume; }
     void setBlockVolume(float v) { blockVolume = v; }
 
+    void playSoundWithPitch(const std::string& filePath, float volume = 1.0f, float pitch = 1.0f);
+
     bool isMobSoundsEnabled() const { return mobSoundsEnabled; }
     void setMobSoundsEnabled(bool enabled) { mobSoundsEnabled = enabled; }
     bool isBlockSoundsEnabled() const { return blockSoundsEnabled; }
