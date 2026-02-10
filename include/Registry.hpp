@@ -6,16 +6,37 @@
 #include "Chunk.hpp"
 #include "MobAI.hpp"
 
+struct BlockFace {
+    int texX = 0;
+    int texY = 0;
+    Vec3 color = {1.0f, 1.0f, 1.0f};
+};
+
 struct BlockDefinition {
     uint8_t id;
     std::string name;
+    bool usePerFace = false;
+    BlockFace faces[6]; // Order: +X, -X, +Y, -Y, +Z, -Z
+    
+    // Legacy support (fallback)
     Vec3 color = {1.0f, 1.0f, 1.0f};
     int texX = 0;
     int texY = 0;
+
     bool isTransparent = false;
     bool isLiquid = false;
     std::string breakSound = "";
     std::string stepSound = "";
+};
+
+struct MobPart {
+    std::string name;
+    Vec3 offset;
+    Vec3 size;
+    Vec3 pivot;
+    Vec3 color = {1.0f, 1.0f, 1.0f};
+    bool affectedByLegAnim = false; // Is it a walking leg?
+    bool affectedByHeadAnim = false; // Is it the head?
 };
 
 struct MobDefinition {
@@ -26,6 +47,7 @@ struct MobDefinition {
     std::string ambientSound = "";
     bool isAquatic = false;
     bool isHostile = false;
+    std::vector<MobPart> parts;
 };
 
 class GameRegistry {

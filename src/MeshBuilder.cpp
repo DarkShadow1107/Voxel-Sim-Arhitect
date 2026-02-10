@@ -17,13 +17,23 @@ static void addVoxelFace(std::vector<Vertex>& out, const Chunk& chunk, int x, in
 
     const auto& def = GameRegistry::getInstance().getBlock(type);
     float r = def.color.x, g = def.color.y, b = def.color.z;
-    
-    // Specific overrides for grass top
-    if (type == BLOCK_GRASS && face == 2) {
-        // Leave green as defined or slightly darker/lighter if needed
-    } else if (type == BLOCK_GRASS && face != 3) {
-        // Sides of grass are dirt-colored usually
-        r = 0.55f; g = 0.40f; b = 0.25f;
+    int tx = def.texX;
+    int ty = def.texY;
+
+    if (def.usePerFace && face >= 0 && face < 6) {
+        r = def.faces[face].color.x;
+        g = def.faces[face].color.y;
+        b = def.faces[face].color.z;
+        tx = def.faces[face].texX;
+        ty = def.faces[face].texY;
+    } else {
+        // Specific overrides for grass top (fallback if not using per-face)
+        if (type == BLOCK_GRASS && face == 2) {
+            // green
+        } else if (type == BLOCK_GRASS && face != 3) {
+            r = 0.55f; g = 0.40f; b = 0.25f;
+            tx = 0; ty = 0; // Dirt texture
+        }
     }
 
 
@@ -85,20 +95,9 @@ static void addVoxelFace(std::vector<Vertex>& out, const Chunk& chunk, int x, in
         const float pz = (float)z + corners[face][i][2];
         float s = std::clamp(aoValues[i], 0.5f, 1.0f);
 
-        // UV calculation
-        float tx = (float)def.texX;
-        float ty = (float)def.texY;
-        
-        // Grass overrides
-        if (type == BLOCK_GRASS) {
-            if (face == 2) { tx = 1; ty = 0; } // Top
-            else if (face == 3) { tx = 0; ty = 0; } // Bottom (Dirt)
-            else { tx = 2; ty = 0; } // Side
-        }
-
         static const float uvCoords[4][2] = { {0,0}, {1,0}, {1,1}, {0,1} };
-        float u = (tx + uvCoords[i][0]) / 16.0f;
-        float v = (ty + uvCoords[i][1]) / 16.0f;
+        float u = ((float)tx + uvCoords[i][0]) / 16.0f;
+        float v = ((float)ty + uvCoords[i][1]) / 16.0f;
 
         out.push_back(Vertex{px, py, pz, nx, ny, nz, r * s, g * s, b * s, u, v});
     };

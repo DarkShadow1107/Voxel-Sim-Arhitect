@@ -77,6 +77,37 @@ bool Shader::loadFromFiles(const std::string& vertexPath, const std::string& fra
     return true;
 }
 
+bool Shader::loadFromSource(const std::string& vertexSrc, const std::string& fragmentSrc) {
+    destroy();
+    if (vertexSrc.empty() || fragmentSrc.empty()) {
+        std::cerr << "Empty shader source provided." << std::endl;
+        return false;
+    }
+    const unsigned int v = compile(GL_VERTEX_SHADER, vertexSrc);
+    const unsigned int f = compile(GL_FRAGMENT_SHADER, fragmentSrc);
+    if (v == 0 || f == 0) {
+        if (v) glDeleteShader(v);
+        if (f) glDeleteShader(f);
+        return false;
+    }
+    m_program = glCreateProgram();
+    glAttachShader(m_program, v);
+    glAttachShader(m_program, f);
+    glLinkProgram(m_program);
+    glDeleteShader(v);
+    glDeleteShader(f);
+    int ok = 0;
+    glGetProgramiv(m_program, GL_LINK_STATUS, &ok);
+    if (!ok) {
+        char log[2048] = {};
+        glGetProgramInfoLog(m_program, (GLsizei)sizeof(log), nullptr, log);
+        std::cerr << "Shader link failed: " << log << std::endl;
+        destroy();
+        return false;
+    }
+    return true;
+}
+
 void Shader::destroy() {
     if (m_program) {
         glDeleteProgram(m_program);

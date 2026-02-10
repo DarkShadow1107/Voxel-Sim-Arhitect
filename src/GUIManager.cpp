@@ -1,45 +1,16 @@
 #include "GUIManager.hpp"
 #include "Renderer.hpp"
-#include "AudioManager.hpp"
-#include "Registry.hpp"
+#include "Framebuffer.hpp"
+#include "Shader.hpp"
 #include <iostream>
 #include <algorithm>
-#include <vector>
-#include <thread>
-#include <map>
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
 #include <psapi.h>
-#include <commdlg.h>
 #endif
-
-namespace {
-    std::string openFileDialog() {
-#ifdef _WIN32
-        OPENFILENAMEA ofn;
-        char szFile[260] = { 0 };
-        ZeroMemory(&ofn, sizeof(ofn));
-        ofn.lStructSize = sizeof(ofn);
-        ofn.hwndOwner = NULL;
-        ofn.lpstrFile = szFile;
-        ofn.nMaxFile = 260;
-        ofn.lpstrFilter = "Audio Files (*.wav;*.mp3)\0*.wav;*.mp3\0All Files (*.*)\0*.*\0";
-        ofn.nFilterIndex = 1;
-        ofn.lpstrFileTitle = NULL;
-        ofn.nMaxFileTitle = 0;
-        ofn.lpstrInitialDir = NULL;
-        ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR;
-
-        if (GetOpenFileNameA(&ofn) == TRUE) {
-            return std::string(szFile);
-        }
-#endif
-        return "";
-    }
-}
 
 #include <glad/gl.h>
 #include <GLFW/glfw3.h>
@@ -74,21 +45,67 @@ bool GUIManager::init(GLFWwindow* window) {
 
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
-    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;           // Enable Docking
-    io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;         // Enable Multi-Viewport / Platform Windows
+    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+    io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
 
     applyTheme();
 
-    // Platform/renderer backends
     if (!ImGui_ImplGlfw_InitForOpenGL(window, true)) {
         std::cerr << "ImGui_ImplGlfw_InitForOpenGL failed" << std::endl;
         return false;
     }
 
-    // This is a safe default for GL 3.0+ contexts. If your GPU is older, you can lower it.
     if (!ImGui_ImplOpenGL3_Init("#version 330")) {
         std::cerr << "ImGui_ImplOpenGL3_Init failed" << std::endl;
         return false;
+    }
+
+    m_blockPreviewBuf = new Framebuffer();
+    m_blockPreviewBuf->init(512, 512);
+    m_mobPreviewBuf = new Framebuffer();
+    m_mobPreviewBuf->init(512, 512);
+    m_previewShader = new Shader();
+
+    // Simple dedicated preview shaders – no fog, vignette, AO, or night cycle.
+    // Applies vertex color exactly once for correct, bright preview rendering.
+    static const char* kPreviewVert = R"(
+#version 330 core
+layout(location=0) in vec3 aPos;
+layout(location=1) in vec3 aNormal;
+layout(location=2) in vec3 aColor;
+layout(location=3) in vec2 aTexCoord;
+uniform mat4 uModel, uView, uProjection;
+out vec3 vNormal, vColor;
+out vec2 vTexCoord;
+void main(){
+    vec4 wp = uModel * vec4(aPos, 1.0);
+    vNormal  = mat3(uModel) * aNormal;
+    vColor   = aColor;
+    vTexCoord= aTexCoord;
+    gl_Position = uProjection * uView * wp;
+}
+)";
+    static const char* kPreviewFrag = R"(
+#version 330 core
+out vec4 FragColor;
+in vec3 vNormal, vColor;
+in vec2 vTexCoord;
+uniform sampler2D uTexture;
+uniform vec3 uLightDir;
+uniform vec3 uColorTint;
+void main(){
+    vec3 n = normalize(vNormal);
+    vec3 l = normalize(-uLightDir);
+    vec4 tex = texture(uTexture, vTexCoord);
+    if(tex.a < 0.05) discard;
+    float ndotl = max(dot(n, l), 0.0);
+    float lighting = 0.40 + 0.60 * ndotl;
+    vec3 color = lighting * tex.rgb * vColor * uColorTint;
+    FragColor = vec4(color, tex.a);
+}
+)";
+    if (!m_previewShader->loadFromSource(kPreviewVert, kPreviewFrag)) {
+        std::cerr << "Failed to compile preview shader from source!" << std::endl;
     }
 
     glfwSwapInterval(m_vsync ? 1 : 0);
@@ -143,8 +160,6 @@ void GUIManager::applyTheme() {
     colors[ImGuiCol_PlotLines]              = ImVec4(0.61f, 0.61f, 0.61f, 1.00f);
     colors[ImGuiCol_PlotLinesHovered]       = ImVec4(1.00f, 0.43f, 0.35f, 1.00f);
 
-    // When using multi-viewport, match ImGui defaults to avoid rounding artifacts
-    // between the main window and platform windows.
     if (ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
         style.WindowRounding = 0.0f;
         colors[ImGuiCol_WindowBg].w = 1.0f;
@@ -181,122 +196,6 @@ void GUIManager::showMainMenuBar(bool& showProfiler, bool& showMemory, bool& sho
     }
 }
 
-void GUIManager::showBlockDesigner(bool* open) {
-    if (!*open) return;
-    if (!ImGui::Begin("Block Designer", open)) {
-        ImGui::End();
-        return;
-    }
-
-    auto& blocks = GameRegistry::getInstance().getAllBlocks();
-    static uint8_t selectedId = 1;
-
-    ImGui::BeginChild("BlockList", ImVec2(200, 0), true);
-    for (auto& [id, def] : blocks) {
-        if (id == 0) continue;
-        if (ImGui::Selectable(def.name.c_str(), selectedId == id)) {
-            selectedId = id;
-        }
-    }
-    if (ImGui::Button("Add New Block")) {
-        uint8_t nextId = 1;
-        while (blocks.count(nextId)) nextId++;
-        GameRegistry::getInstance().registerBlock({nextId, "New Block", {1,1,1}, 0, 0});
-        selectedId = nextId;
-    }
-    ImGui::EndChild();
-
-    ImGui::SameLine();
-
-    ImGui::BeginGroup();
-    auto& def = blocks[selectedId];
-    char nameBuf[64];
-    strncpy(nameBuf, def.name.c_str(), 63);
-    nameBuf[63] = '\0';
-    if (ImGui::InputText("Name", nameBuf, 64)) def.name = nameBuf;
-    
-    ImGui::ColorEdit3("Color Tint", &def.color.x);
-    ImGui::InputInt("Texture X", &def.texX);
-    ImGui::InputInt("Texture Y", &def.texY);
-
-    ImGui::Text("Preview:");
-    if (m_atlasID) {
-        float size = 64.0f;
-        float uv_step = 1.0f / 16.0f;
-        ImVec2 uv0 = ImVec2(def.texX * uv_step, def.texY * uv_step);
-        ImVec2 uv1 = ImVec2((def.texX + 1) * uv_step, (def.texY + 1) * uv_step);
-        // Using ImageWithBg for the newer ImGui version (1.91.9+) which moved tint_col there
-        ImGui::ImageWithBg((ImTextureID)(uintptr_t)m_atlasID, ImVec2(size, size), uv0, uv1, ImVec4(0,0,0,0), ImVec4(def.color.x, def.color.y, def.color.z, 1.0f));
-    }
-
-    ImGui::Checkbox("Transparent", &def.isTransparent);
-    ImGui::Checkbox("Liquid (Water-like)", &def.isLiquid);
-    
-    ImGui::Separator();
-    ImGui::Text("Sounds");
-    ImGui::Text("Break: %s", def.breakSound.empty() ? "None" : def.breakSound.c_str());
-    ImGui::Text("Step: %s", def.stepSound.empty() ? "None" : def.stepSound.c_str());
-
-    ImGui::EndGroup();
-
-    ImGui::End();
-}
-
-void GUIManager::showMobDesigner(bool* open) {
-    if (!*open) return;
-    if (!ImGui::Begin("Mob Designer", open)) {
-        ImGui::End();
-        return;
-    }
-
-    auto& mobs = GameRegistry::getInstance().getAllMobs();
-    static MobType selectedType = MOB_COW;
-
-    ImGui::BeginChild("MobList", ImVec2(200, 0), true);
-    for (auto& [type, def] : mobs) {
-        if (ImGui::Selectable(def.name.c_str(), selectedType == type)) {
-            selectedType = type;
-        }
-    }
-    if (ImGui::Button("Add New Mob")) {
-        int nextId = (int)MOB_COUNT;
-        while (mobs.count((MobType)nextId)) nextId++;
-        GameRegistry::getInstance().registerMob({(MobType)nextId, "New Mob", 10.0f, 2.0f});
-        selectedType = (MobType)nextId;
-    }
-    ImGui::EndChild();
-
-    ImGui::SameLine();
-
-    ImGui::BeginGroup();
-    auto& def = mobs[selectedType];
-    char nameBuf[64];
-    strncpy(nameBuf, def.name.c_str(), 63);
-    nameBuf[63] = '\0';
-    if (ImGui::InputText("Name", nameBuf, 64)) def.name = nameBuf;
-    
-    ImGui::SliderFloat("Health", &def.maxHp, 1.0f, 100.0f);
-    ImGui::SliderFloat("Speed", &def.speed, 0.5f, 10.0f);
-    ImGui::Checkbox("Aquatic", &def.isAquatic);
-    ImGui::Checkbox("Hostile", &def.isHostile);
-    
-    ImGui::Separator();
-    ImGui::Text("Model Blueprint Preview:");
-    ImGui::BeginChild("MobPreview", ImVec2(0, 100), true);
-    ImGui::Text("Scale: [1.0, 1.0, 1.0]");
-    ImGui::Text("Parts: Body, Head, 4x Legs");
-    if (def.isAquatic) ImGui::Text("Material: Aquatic/Submerged");
-    if (def.isHostile) ImGui::Text("Aura: Hostile/Red");
-    ImGui::EndChild();
-    
-    ImGui::Separator();
-    ImGui::Text("Model: Standard Voxel");
-
-    ImGui::EndGroup();
-
-    ImGui::End();
-}
-
 void GUIManager::showInteractionEditor(bool* open) {
     if (!*open) return;
     if (!ImGui::Begin("Interaction Editor", open)) {
@@ -307,96 +206,20 @@ void GUIManager::showInteractionEditor(bool* open) {
     ImGui::BulletText("Left Click: Break Block");
     ImGui::BulletText("Right Click: Place Block");
     ImGui::BulletText("E: Interact with Mob");
-    
+
     static int interactionRange = 5;
     ImGui::SliderInt("Interaction Range", &interactionRange, 1, 10);
-    
-    ImGui::End();
-}
 
-
-void GUIManager::showSoundEditor(bool* open) {
-    if (!*open) return;
-    
-    auto& am = AudioManager::getInstance();
-
-    ImGui::SetNextWindowSize(ImVec2(350, 450), ImGuiCond_FirstUseEver);
-    if (ImGui::Begin("Sound Editor", open)) {
-        ImGui::Text("Volume Mixers");
-        ImGui::Separator();
-
-        float master = am.getMasterVolume();
-        if (ImGui::SliderFloat("Master", &master, 0.0f, 1.0f)) am.setMasterVolume(master);
-
-        float music = am.getMusicVolume();
-        if (ImGui::SliderFloat("Music", &music, 0.0f, 1.0f)) am.setMusicVolume(music);
-
-        float mobs = am.getMobVolume();
-        if (ImGui::SliderFloat("Mobs", &mobs, 0.0f, 1.0f)) am.setMobVolume(mobs);
-
-        float blocks = am.getBlockVolume();
-        if (ImGui::SliderFloat("Blocks", &blocks, 0.0f, 1.0f)) am.setBlockVolume(blocks);
-
-        ImGui::Spacing();
-        ImGui::Text("Environmental Sounds");
-        ImGui::Separator();
-
-        bool musicOn = am.isMusicEnabled();
-        if (ImGui::Checkbox("Background Music", &musicOn)) am.setMusicEnabled(musicOn);
-
-        if (ImGui::Button("Next Track")) {
-            // Need to expose startNextMusic or just stop current
-            am.setMusicEnabled(false);
-            am.setMusicEnabled(true);
-        }
-
-        bool mobsOn = am.isMobSoundsEnabled();
-        if (ImGui::Checkbox("Mob Sounds", &mobsOn)) am.setMobSoundsEnabled(mobsOn);
-
-        bool blocksOn = am.isBlockSoundsEnabled();
-        if (ImGui::Checkbox("Block Breaking", &blocksOn)) am.setBlockSoundsEnabled(blocksOn);
-
-        ImGui::Separator();
-        ImGui::Text("Sound Studio");
-        static char soundPath[256] = "";
-        static float pitch = 1.0f;
-        static float vol = 1.0f;
-        ImGui::InputText("File Path", soundPath, 256);
-        ImGui::SameLine();
-        if (ImGui::Button("Browse...")) {
-            std::string path = openFileDialog();
-            if (!path.empty()) {
-                // Try to make it relative to project root if possible
-                strncpy(soundPath, path.c_str(), 255);
-            }
-        }
-        ImGui::SliderFloat("Pitch Alteration", &pitch, 0.5f, 2.0f);
-        ImGui::SliderFloat("Volume Alteration", &vol, 0.0f, 1.0f);
-        
-        if (ImGui::Button("Preview Adjusted sound")) {
-            if (strlen(soundPath) > 0) {
-                am.playSoundWithPitch(soundPath, vol, pitch);
-            }
-        }
-        
-        ImGui::SameLine();
-        if (ImGui::Button("Set as Block Break")) {
-            // Mapping logic
-        }
-
-        ImGui::Separator();
-        if (ImGui::Button("Close")) *open = false;
-    }
     ImGui::End();
 }
 
 void GUIManager::showSettings(bool* open, bool& vsync, bool& wireframe, bool& fullscreen, bool& backfaceCulling, Renderer& renderer) {
     ImGui::Begin("Settings", open);
-    
+
     if (ImGui::Checkbox("VSync", &vsync)) {
         renderer.setVSync(vsync);
     }
-    
+
     if (ImGui::Checkbox("Wireframe", &wireframe)) {
         renderer.setWireframe(wireframe);
     }
@@ -417,7 +240,6 @@ void GUIManager::endFrame() {
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
-    // Update and Render additional Platform Windows
     if (ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
         GLFWwindow* backup_current_context = glfwGetCurrentContext();
         ImGui::UpdatePlatformWindows();
@@ -428,6 +250,11 @@ void GUIManager::endFrame() {
 
 void GUIManager::shutdown() {
     if (!m_initialized) return;
+
+    if (m_previewShader) { delete m_previewShader; m_previewShader = nullptr; }
+    if (m_blockPreviewBuf) { delete m_blockPreviewBuf; m_blockPreviewBuf = nullptr; }
+    if (m_mobPreviewBuf) { delete m_mobPreviewBuf; m_mobPreviewBuf = nullptr; }
+
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
@@ -435,94 +262,11 @@ void GUIManager::shutdown() {
     m_initialized = false;
 }
 
-void GUIManager::showProfiler(float frameTime) {
-    if (!m_initialized) {
-        return;
-    }
-
-    // Store history as a ring buffer (no per-frame allocations).
-    m_frameMsHistory[(size_t)m_frameMsHead] = frameTime;
-    m_frameMsHead = (m_frameMsHead + 1) % kProfilerHistorySize;
-    m_frameMsCount = std::min(m_frameMsCount + 1, kProfilerHistorySize);
-
-    // CPU Usage Calculation (Windows)
-#ifdef _WIN32
-    FILETIME ftSysIdle, ftSysKernel, ftSysUser;
-    FILETIME ftProcCreation, ftProcExit, ftProcKernel, ftProcUser;
-    if (GetSystemTimeAsFileTime(&ftSysIdle), GetProcessTimes(GetCurrentProcess(), &ftProcCreation, &ftProcExit, &ftProcKernel, &ftProcUser)) {
-        ULARGE_INTEGER now, proc;
-        GetSystemTimeAsFileTime(&ftSysIdle); // Reuse ftSysIdle for current time
-        now.LowPart = ftSysIdle.dwLowDateTime;
-        now.HighPart = ftSysIdle.dwHighDateTime;
-        
-        proc.LowPart = ftProcKernel.dwLowDateTime + ftProcUser.dwLowDateTime;
-        proc.HighPart = ftProcKernel.dwHighDateTime + ftProcUser.dwHighDateTime;
-
-        if (m_lastCPUUsageTime > 0) {
-            unsigned long long diffTime = now.QuadPart - m_lastCPUUsageTime;
-            unsigned long long diffProc = proc.QuadPart - m_lastProcessTime;
-            if (diffTime > 0) {
-                m_cpuUsagePercent = (float)((double)diffProc / (double)diffTime) * 100.0f / (float)std::thread::hardware_concurrency();
-            }
-        }
-        m_lastCPUUsageTime = now.QuadPart;
-        m_lastProcessTime = proc.QuadPart;
-    }
-#endif
-
-    ImGui::Begin("Engine Profiler");
-
-    const float safeMs = (frameTime > 0.0001f) ? frameTime : 0.0001f;
-    ImGui::Text("Frame: %.3f ms (%.1f FPS)", frameTime, 1000.0f / safeMs);
-    ImGui::Text("CPU Usage: %.1f%% (%u Cores)", m_cpuUsagePercent, std::thread::hardware_concurrency());
-    
-    const char* vendor = (const char*)glGetString(GL_VENDOR);
-    const char* renderer = (const char*)glGetString(GL_RENDERER);
-    ImGui::Text("GPU: %s", renderer ? renderer : "Unknown");
-    ImGui::Text("Vendor: %s", vendor ? vendor : "Unknown");
-
-    bool vsync = m_vsync;
-    if (ImGui::Checkbox("VSync", &vsync)) {
-        m_vsync = vsync;
-        if (m_window) {
-            glfwSwapInterval(m_vsync ? 1 : 0);
-        }
-    }
-
-    const auto getter = [](void* data, int idx) -> float {
-        GUIManager* self = static_cast<GUIManager*>(data);
-        if (self->m_frameMsCount <= 0) {
-            return 0.0f;
-        }
-
-        // Oldest sample first.
-        const int start = (self->m_frameMsHead - self->m_frameMsCount + kProfilerHistorySize) % kProfilerHistorySize;
-        const int i = (start + idx) % kProfilerHistorySize;
-        return self->m_frameMsHistory[(size_t)i];
-    };
-
-    ImGui::PlotLines(
-        "Frame time (ms)",
-        getter,
-        this,
-        m_frameMsCount,
-        0,
-        nullptr,
-        0.0f,
-        40.0f,
-        ImVec2(0.0f, 80.0f));
-
-    ImGui::End();
-}
-
 void GUIManager::showMemoryInspector(size_t arenaOffset, size_t arenaSize, size_t poolUsed, size_t poolTotal) {
-    if (!m_initialized) {
-        return;
-    }
+    if (!m_initialized) return;
 
     ImGui::Begin("Memory Inspector");
 
-    // RAM Usage (Windows)
 #ifdef _WIN32
     PROCESS_MEMORY_COUNTERS_EX pmc;
     if (GetProcessMemoryInfo(GetCurrentProcess(), (PROCESS_MEMORY_COUNTERS*)&pmc, sizeof(pmc))) {
@@ -531,7 +275,6 @@ void GUIManager::showMemoryInspector(size_t arenaOffset, size_t arenaSize, size_
     }
 #endif
 
-    // VRAM Usage (NVIDIA)
     GLint totalVRAM = 0;
     GLint currentVRAM = 0;
     glGetIntegerv(GL_GPU_MEMORY_INFO_TOTAL_AVAILABLE_MEMORY_NVX, &totalVRAM);
@@ -559,9 +302,7 @@ void GUIManager::showMemoryInspector(size_t arenaOffset, size_t arenaSize, size_
 }
 
 void GUIManager::showECSEditor() {
-    if (!m_initialized) {
-        return;
-    }
+    if (!m_initialized) return;
 
     ImGui::Begin("ECS Editor");
     ImGui::TextUnformatted("(Scaffold) Entity/component editing hooks go here.");

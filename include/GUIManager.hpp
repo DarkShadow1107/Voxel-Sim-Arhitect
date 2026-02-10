@@ -1,8 +1,11 @@
 #pragma once
 
-#include <array>
 #include <cstddef>
-#include <string>
+#include <cstdint>
+#include "BlockDesigner.hpp"
+#include "MobDesigner.hpp"
+#include "SoundEditor.hpp"
+#include "EngineProfiler.hpp"
 
 struct GLFWwindow;
 
@@ -17,34 +20,40 @@ public:
     void endFrame();
     void shutdown();
 
-    // Production-grade UI
+    // Theme
     void applyTheme();
-    void showMainMenuBar(bool& showProfiler, bool& showMemory, bool& showECS, bool& showWorldEditor, bool& showSettings, bool& showSoundEditor, bool& showBlockDesigner, bool& showMobDesigner, bool& showInteractionEditor);
-    void showSettings(bool* open, bool& vsync, bool& wireframe, bool& fullscreen, bool& backfaceCulling, class Renderer& renderer);
-    void showSoundEditor(bool* open);
-    void showBlockDesigner(bool* open);
-    void showMobDesigner(bool* open);
-    void showInteractionEditor(bool* open);
 
-    // GUI Panels
-    void showProfiler(float frameTime);
+    // Menu bar
+    void showMainMenuBar(bool& showProfiler, bool& showMemory, bool& showECS,
+                         bool& showWorldEditor, bool& showSettings,
+                         bool& showSoundEditor, bool& showBlockDesigner,
+                         bool& showMobDesigner, bool& showInteractionEditor);
+
+    // Panels that stay in GUIManager
+    void showSettings(bool* open, bool& vsync, bool& wireframe,
+                      bool& fullscreen, bool& backfaceCulling, class Renderer& renderer);
+    void showInteractionEditor(bool* open);
     void showMemoryInspector(size_t arenaOffset, size_t arenaSize, size_t poolUsed, size_t poolTotal);
     void showECSEditor();
 
-private:
-    static constexpr int kProfilerHistorySize = 240;
+    // Modular panels – thin delegates
+    void showBlockDesigner(bool* open)      { m_blockDesigner.show(open, m_atlasID, m_blockPreviewBuf, m_previewShader); }
+    void showMobDesigner(bool* open)        { m_mobDesigner.show(open, m_atlasID, m_mobPreviewBuf, m_previewShader); }
+    void showSoundEditor(bool* open)        { m_soundEditor.show(open); }
+    void showProfiler(float frameTime)      { m_profiler.show(frameTime, m_vsync, m_window); }
 
+private:
     GLFWwindow* m_window = nullptr;
     uint32_t m_atlasID = 0;
+    class Framebuffer* m_blockPreviewBuf = nullptr;
+    class Framebuffer* m_mobPreviewBuf   = nullptr;
+    class Shader* m_previewShader = nullptr;
     bool m_initialized = false;
     bool m_vsync = true;
 
-    std::array<float, kProfilerHistorySize> m_frameMsHistory{};
-    int m_frameMsHead = 0;
-    int m_frameMsCount = 0;
-
-    // CPU Profiling
-    unsigned long long m_lastCPUUsageTime = 0;
-    unsigned long long m_lastProcessTime = 0;
-    float m_cpuUsagePercent = 0.0f;
+    // Modular UI panels
+    BlockDesigner  m_blockDesigner;
+    MobDesigner    m_mobDesigner;
+    SoundEditor    m_soundEditor;
+    EngineProfiler m_profiler;
 };

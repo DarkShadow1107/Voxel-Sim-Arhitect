@@ -70,6 +70,10 @@ set(SOURCES
     src/MobAI.cpp
     src/AudioManager.cpp
     src/Registry.cpp
+    src/BlockDesigner.cpp
+    src/MobDesigner.cpp
+    src/SoundEditor.cpp
+    src/EngineProfiler.cpp
     ${glfw_SOURCE_DIR}/deps/glad_gl.c
     ${imgui_SOURCE_DIR}/imgui.cpp
     ${imgui_SOURCE_DIR}/imgui_draw.cpp
@@ -84,7 +88,7 @@ add_executable(${PROJECT_NAME} ${SOURCES})
 # Link libraries
 target_link_libraries(${PROJECT_NAME} glfw OpenGL::GL)
 if(WIN32)
-    target_link_libraries(${PROJECT_NAME} psapi comdlg32)
+    target_link_libraries(${PROJECT_NAME} psapi comdlg32 powrprof pdh)
 endif()
 
 message(STATUS "Voxel-Sim Architect project configured with FetchContent.")

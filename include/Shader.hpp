@@ -9,6 +9,7 @@ public:
     ~Shader();
 
     bool loadFromFiles(const std::string& vertexPath, const std::string& fragmentPath);
+    bool loadFromSource(const std::string& vertexSrc, const std::string& fragmentSrc);
     void destroy();
 
     void use() const;

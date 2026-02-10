@@ -50,6 +50,44 @@ struct ChatMessage {
     ImVec4 color = ImVec4(1,1,1,1);
 };
 
+void saveUIConfig(bool showProfiler, bool showMemory, bool showECS, bool showWorldEditor, 
+                  bool showSettings, bool showSoundEditor, bool showBlockDesigner, 
+                  bool showMobDesigner, bool showInteractionEditor, bool fullscreen) {
+    std::ofstream file("ui_config.txt");
+    if (file.is_open()) {
+        file << showProfiler << "\n";
+        file << showMemory << "\n";
+        file << showECS << "\n";
+        file << showWorldEditor << "\n";
+        file << showSettings << "\n";
+        file << showSoundEditor << "\n";
+        file << showBlockDesigner << "\n";
+        file << showMobDesigner << "\n";
+        file << showInteractionEditor << "\n";
+        file << fullscreen << "\n";
+        file.close();
+    }
+}
+
+void loadUIConfig(bool& showProfiler, bool& showMemory, bool& showECS, bool& showWorldEditor, 
+                  bool& showSettings, bool& showSoundEditor, bool& showBlockDesigner, 
+                  bool& showMobDesigner, bool& showInteractionEditor, bool& fullscreen) {
+    std::ifstream file("ui_config.txt");
+    if (file.is_open()) {
+        file >> showProfiler;
+        file >> showMemory;
+        file >> showECS;
+        file >> showWorldEditor;
+        file >> showSettings;
+        file >> showSoundEditor;
+        file >> showBlockDesigner;
+        file >> showMobDesigner;
+        file >> showInteractionEditor;
+        file >> fullscreen;
+        file.close();
+    }
+}
+
 int main() {
     std::cout << "Voxel-Sim Architect Engine Starting..." << std::endl;
     GameRegistry::getInstance().init();
@@ -131,9 +169,12 @@ int main() {
     bool fullscreen = true;
     bool menuMode = true; // Start in menu mode
 
+    loadUIConfig(showProfiler, showMemory, showECS, showWorldEditor, showSettings, showSoundEditor, showBlockDesigner, showMobDesigner, showInteractionEditor, fullscreen);
+
     renderer.setVSync(vsync);
     renderer.setWireframe(wireframe);
     renderer.setBackfaceCulling(backfaceCulling);
+    renderer.setFullscreen(fullscreen);
 
     // Resolve asset paths
     const auto findProjectRoot = []() -> std::filesystem::path {
@@ -1080,175 +1121,20 @@ int main() {
                     if (mob.type == MOB_SHEEP) tint = MobAI::getSheepColor(mob.sheepColor);
                     voxelShader.setVec3("uColorTint", tint);
 
-                    auto drawPart = [&](Vec3 offset, Vec3 size, Vec3 pivot, Vec3 rot) {
-                        Mat4 p = root * translate(offset) * rotateX(rot.x) * rotateY(rot.y) * rotateZ(rot.z) * translate(-pivot) * scale(size);
-                        voxelShader.setMat4("uModel", p);
-                        mobMeshes[(int)mob.type].draw();
-                    };
+                    auto& mobDef = GameRegistry::getInstance().getMob(mob.type);
+                    for (const auto& part : mobDef.parts) {
+                        float rotX = 0, rotY = 0, rotZ = 0;
+                        if (part.affectedByLegAnim) rotX = legAngle;
+                        if (part.affectedByHeadAnim) rotX += std::sin(mob.animTime * 0.4f) * 0.05f;
 
-                    switch(mob.type) {
-                        case MOB_COW: {
-                            // Body
-                            drawPart({-0.45f, 0.4f, -0.6f}, {0.9f, 0.8f, 1.3f}, {0,0,0}, {0,0,0});
-                            // Head
-                            float hb = std::sin(mob.animTime * 0.4f) * 0.04f;
-                            drawPart({-0.25f, 0.85f+hb, 0.45f}, {0.5f, 0.5f, 0.5f}, {0,0,0}, {0,0,0});
-                            // Horns
-                            drawPart({-0.35f, 1.3f+hb, 0.55f}, {0.1f, 0.2f, 0.1f}, {0,0,0}, {0,0,0});
-                            drawPart({ 0.25f, 1.3f+hb, 0.55f}, {0.1f, 0.2f, 0.1f}, {0,0,0}, {0,0,0});
-                            // Legs
-                            drawPart({-0.4f, 0.0f, 0.4f}, {0.3f, 0.4f, 0.3f}, {0.15f, 0.4f, 0.15f}, {legAngle,0,0});
-                            drawPart({ 0.1f, 0.0f, 0.4f}, {0.3f, 0.4f, 0.3f}, {0.15f, 0.4f, 0.15f}, {-legAngle,0,0});
-                            drawPart({-0.4f, 0.0f, -0.5f}, {0.3f, 0.4f, 0.3f}, {0.15f, 0.4f, 0.15f}, {-legAngle,0,0});
-                            drawPart({ 0.1f, 0.0f, -0.5f}, {0.3f, 0.4f, 0.3f}, {0.15f, 0.4f, 0.15f}, {legAngle,0,0});
-                            break;
-                        }
-                        case MOB_PIG: {
-                            // Body
-                            drawPart({-0.4f, 0.35f, -0.5f}, {0.8f, 0.7f, 1.1f}, {0,0,0}, {0,0,0});
-                            // Head
-                            drawPart({-0.25f, 0.65f, 0.4f}, {0.5f, 0.5f, 0.4f}, {0,0,0}, {0,0,0});
-                            // Snout
-                            drawPart({-0.15f, 0.75f, 0.8f}, {0.3f, 0.2f, 0.1f}, {0,0,0}, {0,0,0});
-                            // Legs
-                            drawPart({-0.35f, 0.0f, 0.35f}, {0.25f, 0.35f, 0.25f}, {0.125f, 0.35f, 0.125f}, {legAngle,0,0});
-                            drawPart({ 0.10f, 0.0f, 0.35f}, {0.25f, 0.35f, 0.25f}, {0.125f, 0.35f, 0.125f}, {-legAngle,0,0});
-                            drawPart({-0.35f, 0.0f, -0.45f}, {0.25f, 0.35f, 0.25f}, {0.125f, 0.35f, 0.125f}, {-legAngle,0,0});
-                            drawPart({ 0.10f, 0.0f, -0.45f}, {0.25f, 0.35f, 0.25f}, {0.125f, 0.35f, 0.125f}, {legAngle,0,0});
-                            break;
-                        }
-                        case MOB_SHEEP: {
-                            // Body (Wool)
-                            drawPart({-0.45f, 0.45f, -0.6f}, {0.9f, 0.8f, 1.2f}, {0,0,0}, {0,0,0});
-                            // Head (Smaller wool part)
-                            drawPart({-0.25f, 0.85f, 0.4f}, {0.5f, 0.5f, 0.4f}, {0,0,0}, {0,0,0});
-                            // Legs (No tint - skin color)
-                            voxelShader.setVec3("uColorTint", {1.0f, 1.0f, 1.0f});
-                            drawPart({-0.35f, 0.0f, 0.35f}, {0.25f, 0.5f, 0.25f}, {0,0,0}, {legAngle,0,0});
-                            drawPart({ 0.10f, 0.0f, 0.35f}, {0.25f, 0.5f, 0.25f}, {0,0,0}, {-legAngle,0,0});
-                            drawPart({-0.35f, 0.0f, -0.55f}, {0.25f, 0.5f, 0.25f}, {0,0,0}, {-legAngle,0,0});
-                            drawPart({ 0.10f, 0.0f, -0.55f}, {0.25f, 0.5f, 0.25f}, {0,0,0}, {legAngle,0,0});
-                            break;
-                        }
-                        case MOB_CHICKEN: {
-                            float flap = std::sin(mob.animTime * 2.0f) * 0.7f;
-                            // Body
-                            drawPart({-0.2f, 0.3f, -0.2f}, {0.4f, 0.4f, 0.5f}, {0,0,0}, {0,0,0});
-                            // Head
-                            drawPart({-0.15f, 0.7f, 0.1f}, {0.3f, 0.3f, 0.25f}, {0,0,0}, {0,0,0});
-                            // Beak
-                            voxelShader.setVec3("uColorTint", {1.0f, 0.5f, 0.0f});
-                            drawPart({-0.1f, 0.8f, 0.35f}, {0.2f, 0.1f, 0.2f}, {0,0,0}, {0,0,0});
-                            // Legs
-                            voxelShader.setVec3("uColorTint", {1.0f, 1.0f, 1.0f});
-                            drawPart({-0.15f, 0.0f, 0.0f}, {0.1f, 0.35f, 0.1f}, {0,0,0}, {legAngle,0,0});
-                            drawPart({ 0.05f, 0.0f, 0.0f}, {0.1f, 0.35f, 0.1f}, {0,0,0}, {-legAngle,0,0});
-                            // Wings
-                            drawPart({-0.35f, 0.45f, -0.1f}, {0.15f, 0.3f, 0.45f}, {0.15f, 0.3f, 0.25f}, {0,0,flap});
-                            drawPart({ 0.2f, 0.45f, -0.1f}, {0.15f, 0.3f, 0.45f}, {0, 0.3f, 0.25f}, {0,0,-flap});
-                            break;
-                        }
-                        case MOB_RABBIT: {
-                             // Body
-                            drawPart({-0.2f, 0.2f, -0.25f}, {0.4f, 0.35f, 0.5f}, {0,0,0}, {0,0,0});
-                            // Head
-                            drawPart({-0.15f, 0.45f, 0.1f}, {0.3f, 0.3f, 0.3f}, {0,0,0}, {0,0,0});
-                            // Ears
-                            drawPart({-0.12f, 0.75f, 0.15f}, {0.08f, 0.3f, 0.1f}, {0,0,0}, {0,0,0});
-                            drawPart({ 0.04f, 0.75f, 0.15f}, {0.08f, 0.3f, 0.1f}, {0,0,0}, {0,0,0});
-                            // Legs
-                            drawPart({-0.18f, 0.0f, 0.15f}, {0.12f, 0.2f, 0.12f}, {0,0,0}, {legAngle,0,0});
-                            drawPart({ 0.06f, 0.0f, 0.15f}, {0.12f, 0.2f, 0.12f}, {0,0,0}, {-legAngle,0,0});
-                            drawPart({-0.18f, 0.0f, -0.2f}, {0.12f, 0.2f, 0.12f}, {0,0,0}, {-legAngle,0,0});
-                            drawPart({ 0.06f, 0.0f, -0.2f}, {0.12f, 0.2f, 0.12f}, {0,0,0}, {legAngle,0,0});
-                            break;
-                        }
-                        case MOB_BIRD: {
-                            float flap = std::sin(mob.animTime * 3.0f) * 1.0f;
-                            // Body
-                            drawPart({-0.15f, 0.0f, -0.2f}, {0.3f, 0.25f, 0.4f}, {0,0,0}, {0,0,0});
-                            // Head
-                            drawPart({-0.1f, 0.25f, 0.15f}, {0.2f, 0.2f, 0.2f}, {0,0,0}, {0,0,0});
-                            // Beak
-                            voxelShader.setVec3("uColorTint", {1.0f, 1.0f, 0.0f});
-                            drawPart({-0.05f, 0.35f, 0.35f}, {0.1f, 0.05f, 0.15f}, {0,0,0}, {0,0,0});
-                            // Wings
-                            voxelShader.setVec3("uColorTint", tint);
-                            drawPart({-0.45f, 0.1f, -0.15f}, {0.35f, 0.1f, 0.35f}, {0.35f,0,0.2f}, {0,0,-flap});
-                            drawPart({ 0.1f, 0.1f, -0.15f}, {0.35f, 0.1f, 0.35f}, {0,0,0.2f}, {0,0,flap});
-                            break;
-                        }
-                        case MOB_FISH:
-                        case MOB_SALMON: {
-                            float wag = std::sin(mob.animTime * 1.5f) * 0.4f;
-                            if (mob.type == MOB_SALMON) voxelShader.setVec3("uColorTint", {0.8f, 0.4f, 0.4f});
-                            // Body
-                            drawPart({-0.15f, 0.05f, -0.3f}, {0.3f, 0.4f, 0.7f}, {0,0,0}, {0,wag,0});
-                            // Tail
-                            drawPart({-0.05f, 0.1f, -0.65f}, {0.1f, 0.3f, 0.45f}, {0.05f, 0, 0.45f}, {0,wag*1.5f,0});
-                            // Dorsal Fin
-                            drawPart({-0.02f, 0.45f, -0.2f}, {0.04f, 0.2f, 0.3f}, {0,0,0}, {0,wag,0});
-                            break;
-                        }
-                        case MOB_OCTOPUS: {
-                            // Head
-                            drawPart({-0.35f, 0.35f, -0.35f}, {0.7f, 0.8f, 0.7f}, {0,0,0}, {0,0,0});
-                            // Eyes
-                            voxelShader.setVec3("uColorTint", {1,1,1});
-                            drawPart({-0.2f, 0.65f, 0.3f}, {0.15f, 0.2f, 0.1f}, {0,0,0}, {0,0,0});
-                            drawPart({ 0.05f, 0.65f, 0.3f}, {0.15f, 0.2f, 0.1f}, {0,0,0}, {0,0,0});
-                            // Tentacles (8)
-                            voxelShader.setVec3("uColorTint", tint);
-                            for(int j=0; j<8; ++j) {
-                                float ang = (float)j * (6.28f / 8.0f);
-                                float w = std::sin(mob.animTime + (float)j) * 0.4f;
-                                drawPart({std::cos(ang)*0.25f, 0.0f, std::sin(ang)*0.25f}, {0.15f, 0.5f, 0.15f}, {0.075f, 0.5f, 0.075f}, {w, 0, w});
-                            }
-                            break;
-                        }
-                        case MOB_DOG: {
-                            // Body
-                            drawPart({-0.25f, 0.3f, -0.5f}, {0.5f, 0.5f, 1.0f}, {0,0,0}, {0,0,0});
-                            // Head
-                            float r = std::sin(mob.animTime * 0.2f) * 0.1f;
-                            drawPart({-0.2f, 0.6f, 0.4f}, {0.4f, 0.4f, 0.4f}, {0.2f, 0, 0}, {0, r, 0});
-                            // Snout
-                            drawPart({-0.12f, 0.65f, 0.75f}, {0.25f, 0.2f, 0.25f}, {0,0,0}, {0, r, 0});
-                            // Ears
-                            drawPart({-0.25f, 0.95f, 0.45f}, {0.15f, 0.15f, 0.1f}, {0,0,0}, {0, r, 0});
-                            drawPart({ 0.1f, 0.95f, 0.45f}, {0.15f, 0.15f, 0.1f}, {0,0,0}, {0, r, 0});
-                            // Legs
-                            drawPart({-0.2f, 0.0f, 0.35f}, {0.2f, 0.35f, 0.2f}, {0,0,0}, {legAngle,0,0});
-                            drawPart({ 0.0f, 0.0f, 0.35f}, {0.2f, 0.35f, 0.2f}, {0,0,0}, {-legAngle,0,0});
-                            drawPart({-0.2f, 0.0f, -0.45f}, {0.2f, 0.35f, 0.2f}, {0,0,0}, {-legAngle,0,0});
-                            drawPart({ 0.0f, 0.0f, -0.45f}, {0.2f, 0.35f, 0.2f}, {0,0,0}, {legAngle,0,0});
-                            // Tail
-                            float twist = std::sin(mob.animTime * 2.0f) * 0.5f;
-                            drawPart({-0.05f, 0.65f, -0.55f}, {0.1f, 0.1f, 0.5f}, {0.05f,0,0.5f}, {0, twist, 0});
-                            break;
-                        }
-                        case MOB_CAT: {
-                            // Body
-                            drawPart({-0.15f, 0.25f, -0.4f}, {0.3f, 0.35f, 0.8f}, {0,0,0}, {0,0,0});
-                            // Head
-                            drawPart({-0.12f, 0.55f, 0.3f}, {0.25f, 0.25f, 0.25f}, {0,0,0}, {0,0,0});
-                            // Ears
-                            drawPart({-0.14f, 0.75f, 0.35f}, {0.1f, 0.15f, 0.05f}, {0,0,0}, {0,0,0});
-                            drawPart({ 0.04f, 0.75f, 0.35f}, {0.1f, 0.15f, 0.05f}, {0,0,0}, {0,0,0});
-                            // Legs
-                            drawPart({-0.12f, 0.0f, 0.25f}, {0.12f, 0.3f, 0.12f}, {0,0,0}, {legAngle,0,0});
-                            drawPart({ 0.02f, 0.0f, 0.25f}, {0.12f, 0.3f, 0.12f}, {0,0,0}, {-legAngle,0,0});
-                            drawPart({-0.12f, 0.0f, -0.3f}, {0.12f, 0.3f, 0.12f}, {0,0,0}, {-legAngle,0,0});
-                            drawPart({ 0.02f, 0.0f, -0.3f}, {0.12f, 0.3f, 0.12f}, {0,0,0}, {legAngle,0,0});
-                            break;
-                        }
-                        default: {
-                            Vec3 half = MobAI::getHalfExtents(mob.type);
-                            Mat4 model = translate(transform->position) * rotateY(yawRad) * scale({half.x * 2.0f, half.y * 2.0f, half.z * 2.0f}) * translate({-0.5f, 0, -0.5f});
-                            voxelShader.setMat4("uModel", model);
-                            mobMeshes[(int)mob.type].draw();
-                        }
+                        Mat4 p = root * translate(part.offset) * rotateX(rotX) * rotateY(rotY) * rotateZ(rotZ) * translate(-part.pivot) * scale(part.size);
+                        voxelShader.setMat4("uModel", p);
+                        Vec3 partTint = part.color * (mob.type == MOB_SHEEP ? tint : Vec3{1,1,1});
+                        voxelShader.setVec3("uColorTint", partTint);
+                        mobMeshes[0].draw();
                     }
+
+                    voxelShader.setVec3("uColorTint", Vec3{1,1,1});
                 }
             }
 
@@ -1411,6 +1297,11 @@ int main() {
             }
 
             ImGui::Separator();
+            if (ImGui::Checkbox("Fullscreen", &fullscreen)) {
+                renderer.setFullscreen(fullscreen);
+            }
+
+            ImGui::Separator();
             if (ImGui::Button("Close", ImVec2(120, 0))) {
                 showSettings = false;
                 menuMode = false;
@@ -1424,6 +1315,8 @@ int main() {
 
         renderer.swapBuffers();
     }
+
+    saveUIConfig(showProfiler, showMemory, showECS, showWorldEditor, showSettings, showSoundEditor, showBlockDesigner, showMobDesigner, showInteractionEditor, fullscreen);
 
     gui.shutdown();
     renderer.shutdown();
