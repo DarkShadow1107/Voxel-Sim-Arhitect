@@ -14,18 +14,23 @@ out vec3 vNormal;
 out vec3 vWorldPos;
 out vec3 vColor;
 out vec2 vTexCoord;
+out float vDistance;
 
 void main() {
     vec3 pos = aPos;
-    
+
     // Wave effect for water
     vec2 atlasSize = vec2(16.0, 16.0);
     vec2 tileBase = floor(aTexCoord * atlasSize);
     bool isWater = (tileBase.x == 4.0 && tileBase.y == 0.0);
-    
+
     if (isWater && aNormal.y > 0.5) {
-        pos.y -= 0.15; // Slightly lower water level
-        pos.y += sin(uTime * 2.0 + aPos.x * 0.5 + aPos.z * 0.5) * 0.05;
+        pos.y -= 0.12;
+        // Multi-octave wave for more natural water surface
+        float wave1 = sin(uTime * 1.8 + aPos.x * 0.7 + aPos.z * 0.5) * 0.04;
+        float wave2 = sin(uTime * 2.5 + aPos.x * 1.3 - aPos.z * 0.9) * 0.02;
+        float wave3 = cos(uTime * 1.2 + aPos.z * 0.4 + aPos.x * 0.3) * 0.03;
+        pos.y += wave1 + wave2 + wave3;
     }
 
     vec4 worldPos = uModel * vec4(pos, 1.0);
@@ -34,5 +39,8 @@ void main() {
     vColor = aColor;
     vTexCoord = aTexCoord;
 
-    gl_Position = uProjection * uView * worldPos;
+    vec4 viewPos = uView * worldPos;
+    vDistance = length(viewPos.xyz);
+
+    gl_Position = uProjection * viewPos;
 }

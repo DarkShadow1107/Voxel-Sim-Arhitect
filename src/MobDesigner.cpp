@@ -5,6 +5,7 @@
 #include "GLMesh.hpp"
 #include "MeshBuilder.hpp"
 #include "Math.hpp"
+#include "AINodeEditor.hpp"
 
 #include <glad/gl.h>
 #include <GLFW/glfw3.h>
@@ -45,7 +46,7 @@ namespace {
 namespace { std::string openFileDialog() { return ""; } }
 #endif
 
-void MobDesigner::show(bool* open, unsigned int atlasID, Framebuffer* previewBuffer, Shader* previewShader) {
+void MobDesigner::show(bool* open, unsigned int atlasID, Framebuffer* previewBuffer, Shader* previewShader, Framebuffer* partPreviewBuf) {
     if (!*open) return;
     ImGui::SetNextWindowSize(ImVec2(1100, 700), ImGuiCond_FirstUseEver);
 
@@ -89,7 +90,7 @@ void MobDesigner::show(bool* open, unsigned int atlasID, Framebuffer* previewBuf
     if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_Y, false)) redo();
 
     // ===== LEFT PANEL: Mob List =====
-    ImGui::BeginChild("##MobListPanel", ImVec2(180, 0), true);
+    ImGui::BeginChild("##MobListPanel", ImVec2(m_listPanelWidth, 0), true);
     ImGui::TextColored(ImVec4(0.3f, 0.9f, 0.5f, 1.0f), "MOBS");
     ImGui::Separator();
 
@@ -138,9 +139,39 @@ void MobDesigner::show(bool* open, unsigned int atlasID, Framebuffer* previewBuf
     }
     ImGui::EndChild();
 
+    // Vertical splitter handle
+    ImGui::SameLine();
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.15f, 0.15f, 0.15f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.4f, 0.6f, 1.0f, 0.7f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.4f, 0.6f, 1.0f, 1.0f));
+    ImGui::Button("##mobListSplitter", ImVec2(4.0f, ImGui::GetContentRegionAvail().y));
+    if (ImGui::IsItemActive()) {
+        m_listPanelWidth += ImGui::GetIO().MouseDelta.x;
+        m_listPanelWidth = std::clamp(m_listPanelWidth, 120.0f, 400.0f);
+    }
+    if (ImGui::IsItemHovered() || ImGui::IsItemActive()) ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+    ImGui::PopStyleColor(3);
+
     ImGui::SameLine();
 
     if (!mobs.count(selectedType)) { ImGui::End(); return; }
+
+    // If editing a part in Block Designer, show banner and skip normal UI
+    if (m_editingPartExternally) {
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.15f, 0.3f, 0.5f, 1.0f));
+        ImGui::BeginChild("##ExtEditBanner", ImVec2(0, 0), true);
+        ImGui::Spacing();
+        ImGui::TextColored(ImVec4(1.0f, 0.9f, 0.3f, 1.0f),
+            "  Part '%s' is being edited in Block Designer.",
+            m_editingPartIdx >= 0 && m_editingPartIdx < (int)m_workingCopy.parts.size()
+                ? m_workingCopy.parts[m_editingPartIdx].name.c_str() : "?");
+        ImGui::Spacing();
+        ImGui::TextDisabled("  Use the Block Designer window to edit textures/colors, then click 'Done & Return'.");
+        ImGui::EndChild();
+        ImGui::PopStyleColor();
+        ImGui::End();
+        return;
+    }
 
     // Wrap all right-side content in a child to keep layout after SameLine
     ImGui::BeginChild("##MobRightSide", ImVec2(0, 0), false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
@@ -179,7 +210,7 @@ void MobDesigner::show(bool* open, unsigned int atlasID, Framebuffer* previewBuf
     MobDefinition preEditSnapshot = def;
 
     // ===== CENTER: Properties + Parts List =====
-    ImGui::BeginChild("##MobCenterPanel", ImVec2(420, 0), false);
+    ImGui::BeginChild("##MobCenterPanel", ImVec2(m_propsPanelWidth, 0), false);
     {
         ImGui::TextColored(ImVec4(0.3f, 0.9f, 0.5f, 1.0f), "PROPERTIES");
         ImGui::Separator();
@@ -239,6 +270,243 @@ void MobDesigner::show(bool* open, unsigned int atlasID, Framebuffer* previewBuf
             ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.4f, 1.0f), "Appearance");
             ImGui::ColorEdit3("Part Color", &part.color.x, ImGuiColorEditFlags_Float);
 
+            ImGui::Spacing();
+            ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.4f, 1.0f), "Texture");
+            ImGui::Checkbox("Per-Face Textures", &part.usePerFace);
+
+            if (!part.usePerFace) {
+                ImGui::SliderInt("Texture X##part", &part.texX, 0, 15);
+                ImGui::SliderInt("Texture Y##part", &part.texY, 0, 15);
+
+                // --- Texture Atlas Picker (non per-face mode) ---
+                ImGui::Spacing();
+                ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.4f, 1.0f), "Texture Atlas");
+                ImGui::TextDisabled("Click to pick a texture tile.");
+                {
+                    ImVec2 atlasSize(256, 256);
+                    ImVec2 cursorPos = ImGui::GetCursorScreenPos();
+                    ImGui::Image((ImTextureID)(uintptr_t)atlasID, atlasSize);
+                    if (ImGui::IsItemClicked()) {
+                        ImVec2 mouse = ImGui::GetMousePos();
+                        int tx = (int)((mouse.x - cursorPos.x) / (atlasSize.x / 16.0f));
+                        int ty = (int)((mouse.y - cursorPos.y) / (atlasSize.y / 16.0f));
+                        tx = std::clamp(tx, 0, 15);
+                        ty = std::clamp(ty, 0, 15);
+                        part.texX = tx;
+                        part.texY = ty;
+                    }
+                    // Grid overlay + highlight
+                    ImDrawList* adl = ImGui::GetWindowDrawList();
+                    float cellW = atlasSize.x / 16.0f;
+                    float cellH = atlasSize.y / 16.0f;
+                    for (int i = 0; i <= 16; i++) {
+                        adl->AddLine(ImVec2(cursorPos.x + i * cellW, cursorPos.y),
+                                     ImVec2(cursorPos.x + i * cellW, cursorPos.y + atlasSize.y), IM_COL32(255,255,255,40));
+                        adl->AddLine(ImVec2(cursorPos.x, cursorPos.y + i * cellH),
+                                     ImVec2(cursorPos.x + atlasSize.x, cursorPos.y + i * cellH), IM_COL32(255,255,255,40));
+                    }
+                    // Highlight selected cell
+                    ImVec2 selMin(cursorPos.x + part.texX * cellW, cursorPos.y + part.texY * cellH);
+                    ImVec2 selMax(selMin.x + cellW, selMin.y + cellH);
+                    adl->AddRect(selMin, selMax, IM_COL32(255, 255, 0, 255), 0.0f, 0, 2.0f);
+                }
+            } else {
+                // --- 2D Unfolded Cube (cross pattern) with texture swatches ---
+                ImGui::TextDisabled("Click a face to select/edit. Hover to highlight in 3D.");
+                const float cellSize = 80.0f;
+                const float gap = 3.0f;
+                const float cellStep = cellSize + gap;
+                const char* faceNames[] = {"+X", "-X", "+Y", "-Y", "+Z", "-Z"};
+
+                // Layout:         [Top(2)]
+                // [Left(1)] [Front(4)] [Right(0)] [Back(5)]
+                //                 [Bottom(3)]
+                struct FaceCell { int face; int col; int row; };
+                FaceCell cells[] = {
+                    {2, 1, 0},  // Top
+                    {1, 0, 1},  // Left
+                    {4, 1, 1},  // Front
+                    {0, 2, 1},  // Right
+                    {5, 3, 1},  // Back
+                    {3, 1, 2},  // Bottom
+                };
+
+                m_hoveredFace = -1; // Reset each frame
+
+                ImVec2 origin = ImGui::GetCursorScreenPos();
+                ImDrawList* dl = ImGui::GetWindowDrawList();
+                ImTextureID texId = (ImTextureID)(uintptr_t)atlasID;
+                float ts = 1.0f / 16.0f;
+
+                for (int ci = 0; ci < 6; ci++) {
+                    auto& c = cells[ci];
+                    float x = origin.x + c.col * cellStep;
+                    float y = origin.y + c.row * cellStep;
+                    auto& fc = part.faces[c.face];
+
+                    // Background tinted by face color
+                    ImU32 bgCol = ImGui::ColorConvertFloat4ToU32(ImVec4(fc.color.x * 0.4f, fc.color.y * 0.4f, fc.color.z * 0.4f, 1.0f));
+                    dl->AddRectFilled(ImVec2(x, y), ImVec2(x + cellSize, y + cellSize), bgCol);
+
+                    // Texture swatch inside cell
+                    ImVec2 uv0(fc.texX * ts, fc.texY * ts);
+                    ImVec2 uv1((fc.texX + 1) * ts, (fc.texY + 1) * ts);
+                    dl->AddImage(texId, ImVec2(x + 4, y + 4), ImVec2(x + cellSize - 4, y + cellSize - 20), uv0, uv1);
+
+                    // Face label at bottom of cell
+                    char cellLabel[32];
+                    snprintf(cellLabel, sizeof(cellLabel), "%s [%d,%d]", faceNames[c.face], fc.texX, fc.texY);
+                    ImVec2 textSize = ImGui::CalcTextSize(cellLabel);
+                    dl->AddText(ImVec2(x + (cellSize - textSize.x) * 0.5f, y + cellSize - 16),
+                                IM_COL32(255, 255, 255, 220), cellLabel);
+
+                    // Selection / hover outline
+                    if (m_selectedFace == c.face) {
+                        dl->AddRect(ImVec2(x - 1, y - 1), ImVec2(x + cellSize + 1, y + cellSize + 1),
+                                    IM_COL32(255, 255, 255, 255), 0.0f, 0, 2.5f);
+                    } else {
+                        dl->AddRect(ImVec2(x, y), ImVec2(x + cellSize, y + cellSize), IM_COL32(80, 80, 80, 200));
+                    }
+                }
+
+                // Invisible buttons for click + hover detection
+                for (int ci = 0; ci < 6; ci++) {
+                    auto& c = cells[ci];
+                    float x = origin.x + c.col * cellStep;
+                    float y = origin.y + c.row * cellStep;
+                    ImGui::SetCursorScreenPos(ImVec2(x, y));
+                    ImGui::PushID(500 + c.face);
+                    if (ImGui::InvisibleButton("##faceBtn", ImVec2(cellSize, cellSize))) {
+                        m_selectedFace = (m_selectedFace == c.face) ? -1 : c.face;
+                    }
+                    if (ImGui::IsItemHovered()) {
+                        m_hoveredFace = c.face;
+                        // Draw hover highlight
+                        dl->AddRect(ImVec2(x - 1, y - 1), ImVec2(x + cellSize + 1, y + cellSize + 1),
+                                    IM_COL32(100, 200, 255, 200), 0.0f, 0, 2.0f);
+                    }
+                    ImGui::PopID();
+                }
+
+                // Advance cursor past the grid
+                ImGui::SetCursorScreenPos(ImVec2(origin.x, origin.y + 3 * cellStep + gap));
+                ImGui::Spacing();
+
+                // --- Face Editor ---
+                if (m_selectedFace >= 0 && m_selectedFace < 6) {
+                    auto& selFace = part.faces[m_selectedFace];
+                    ImGui::TextColored(ImVec4(0.5f, 0.8f, 1.0f, 1.0f), "Face: %s", faceNames[m_selectedFace]);
+                    ImGui::Separator();
+                    ImGui::PushID(600 + m_selectedFace);
+                    ImGui::ColorEdit3("Face Color", &selFace.color.x, ImGuiColorEditFlags_Float);
+                    ImGui::SliderInt("Tex X##face", &selFace.texX, 0, 15);
+                    ImGui::SliderInt("Tex Y##face", &selFace.texY, 0, 15);
+                    if (ImGui::Button("Copy to All Faces", ImVec2(-1, 24))) {
+                        for (int f = 0; f < 6; f++) {
+                            part.faces[f] = selFace;
+                        }
+                    }
+                    ImGui::PopID();
+                    ImGui::Spacing();
+                }
+
+                // --- Mirror / Symmetry Tools ---
+                ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.4f, 1.0f), "Symmetry Tools");
+                if (ImGui::Button("Mirror X")) { std::swap(part.faces[0], part.faces[1]); }
+                ImGui::SameLine();
+                if (ImGui::Button("Mirror Y")) { std::swap(part.faces[2], part.faces[3]); }
+                ImGui::SameLine();
+                if (ImGui::Button("Mirror Z")) { std::swap(part.faces[4], part.faces[5]); }
+
+                // --- Gradient Color Fill ---
+                if (ImGui::Button("Gradient Fill (Top->Bottom)")) {
+                    Vec3 top = part.faces[2].color;    // +Y
+                    Vec3 bottom = part.faces[3].color; // -Y
+                    Vec3 mid = {(top.x+bottom.x)*0.5f, (top.y+bottom.y)*0.5f, (top.z+bottom.z)*0.5f};
+                    part.faces[0].color = mid;
+                    part.faces[1].color = mid;
+                    part.faces[4].color = mid;
+                    part.faces[5].color = mid;
+                }
+
+                // --- Copy Face From Another Part ---
+                if (m_selectedFace >= 0 && def.parts.size() > 1) {
+                    ImGui::SameLine();
+                    if (ImGui::Button("Paste Face From...")) ImGui::OpenPopup("##PasteFace");
+                    if (ImGui::BeginPopup("##PasteFace")) {
+                        for (int pi = 0; pi < (int)def.parts.size(); pi++) {
+                            if (pi == selectedPartIdx) continue;
+                            if (ImGui::BeginMenu(def.parts[pi].name.c_str())) {
+                                for (int fi = 0; fi < 6; fi++) {
+                                    if (ImGui::MenuItem(faceNames[fi])) {
+                                        part.faces[m_selectedFace] = def.parts[pi].faces[fi];
+                                    }
+                                }
+                                ImGui::EndMenu();
+                            }
+                        }
+                        ImGui::EndPopup();
+                    }
+                }
+                ImGui::Spacing();
+
+                // --- Texture Atlas Picker ---
+                ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.4f, 1.0f), "Texture Atlas");
+                ImGui::TextDisabled("Click to set texture for %s.", m_selectedFace >= 0 ? faceNames[m_selectedFace] : "selected face");
+                {
+                    ImVec2 atlasSize(256, 256);
+                    ImVec2 cursorPos = ImGui::GetCursorScreenPos();
+                    ImGui::Image((ImTextureID)(uintptr_t)atlasID, atlasSize);
+                    if (ImGui::IsItemClicked()) {
+                        ImVec2 mouse = ImGui::GetMousePos();
+                        int tx = (int)((mouse.x - cursorPos.x) / (atlasSize.x / 16.0f));
+                        int ty = (int)((mouse.y - cursorPos.y) / (atlasSize.y / 16.0f));
+                        tx = std::clamp(tx, 0, 15);
+                        ty = std::clamp(ty, 0, 15);
+                        if (m_selectedFace >= 0) {
+                            part.faces[m_selectedFace].texX = tx;
+                            part.faces[m_selectedFace].texY = ty;
+                        }
+                    }
+                    // Grid overlay
+                    ImDrawList* adl = ImGui::GetWindowDrawList();
+                    float cellW = atlasSize.x / 16.0f;
+                    float cellH = atlasSize.y / 16.0f;
+                    for (int i = 0; i <= 16; i++) {
+                        adl->AddLine(ImVec2(cursorPos.x + i * cellW, cursorPos.y),
+                                     ImVec2(cursorPos.x + i * cellW, cursorPos.y + atlasSize.y), IM_COL32(255,255,255,40));
+                        adl->AddLine(ImVec2(cursorPos.x, cursorPos.y + i * cellH),
+                                     ImVec2(cursorPos.x + atlasSize.x, cursorPos.y + i * cellH), IM_COL32(255,255,255,40));
+                    }
+                    // Highlight current face's texture cell
+                    if (m_selectedFace >= 0) {
+                        auto& sf = part.faces[m_selectedFace];
+                        ImVec2 selMin(cursorPos.x + sf.texX * cellW, cursorPos.y + sf.texY * cellH);
+                        ImVec2 selMax(selMin.x + cellW, selMin.y + cellH);
+                        adl->AddRect(selMin, selMax, IM_COL32(255, 255, 0, 255), 0.0f, 0, 2.0f);
+                    }
+                }
+            }
+
+            // --- Mini 3D Part Preview ---
+            if (partPreviewBuf && previewShader) {
+                ImGui::Spacing();
+                ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.4f, 1.0f), "Part Preview");
+                renderPartPreview(part, atlasID, partPreviewBuf, previewShader);
+                float pvSide = 180.0f;
+                ImGui::Image((ImTextureID)(uintptr_t)getPreviewTexture(partPreviewBuf),
+                             ImVec2(pvSide, pvSide), ImVec2(0, 1), ImVec2(1, 0));
+            }
+
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.5f, 0.8f, 1.0f));
+            if (ImGui::Button("Edit in Block Designer", ImVec2(-1, 30))) {
+                m_editingPartIdx = selectedPartIdx;
+                m_editingPartExternally = true;
+                m_wantsBlockDesigner = true;
+            }
+            ImGui::PopStyleColor();
             ImGui::Spacing();
             ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.4f, 1.0f), "Animation");
             ImGui::Checkbox("Walk/Leg Animation", &part.affectedByLegAnim);
@@ -322,6 +590,19 @@ void MobDesigner::show(bool* open, unsigned int atlasID, Framebuffer* previewBuf
     }
     ImGui::EndChild();
 
+    // Vertical splitter between properties and 3D preview
+    ImGui::SameLine();
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.15f, 0.15f, 0.15f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.4f, 0.6f, 1.0f, 0.7f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.4f, 0.6f, 1.0f, 1.0f));
+    ImGui::Button("##mobPropsSplitter", ImVec2(4.0f, ImGui::GetContentRegionAvail().y));
+    if (ImGui::IsItemActive()) {
+        m_propsPanelWidth += ImGui::GetIO().MouseDelta.x;
+        m_propsPanelWidth = std::clamp(m_propsPanelWidth, 250.0f, 700.0f);
+    }
+    if (ImGui::IsItemHovered() || ImGui::IsItemActive()) ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+    ImGui::PopStyleColor(3);
+
     ImGui::SameLine();
 
     // ===== RIGHT PANEL: Interactive 3D Preview =====
@@ -331,15 +612,18 @@ void MobDesigner::show(bool* open, unsigned int atlasID, Framebuffer* previewBuf
         ImGui::Separator();
 
         // View controls (above preview so they are always visible)
-        if (ImGui::Button("Reset View")) { m_yaw = 0.6f; m_pitch = 0.35f; m_dist = 5.0f; }
+        if (ImGui::Button("Reset View")) { m_yaw = 0.6f; m_pitch = 0.35f; m_dist = 5.0f; m_panX = 0.0f; m_panY = 0.0f; }
         ImGui::SameLine();
-        if (ImGui::Button("Front")) { m_yaw = 0.0f; m_pitch = 0.0f; }
+        if (ImGui::Button("Front")) { m_yaw = 0.0f; m_pitch = 0.0f; m_panX = 0.0f; m_panY = 0.0f; }
         ImGui::SameLine();
-        if (ImGui::Button("Top")) { m_yaw = 0.0f; m_pitch = 1.3f; }
+        if (ImGui::Button("Top")) { m_yaw = 0.0f; m_pitch = 1.3f; m_panX = 0.0f; m_panY = 0.0f; }
         ImGui::SameLine();
-        if (ImGui::Button("Side")) { m_yaw = 1.5708f; m_pitch = 0.0f; }
-        ImGui::TextDisabled("LMB drag: rotate | Scroll: zoom");
+        if (ImGui::Button("Side")) { m_yaw = 1.5708f; m_pitch = 0.0f; m_panX = 0.0f; m_panY = 0.0f; }
+        ImGui::TextDisabled("Right Mouse Button (hold): Rotate view");
+        ImGui::TextDisabled("Scroll Wheel: Zoom in (toward you) / out (away)");
+        ImGui::TextDisabled("Middle Mouse Button (hold): Pan view");
 
+        m_selectedPartForPreview = selectedPartIdx;
         renderPreview(def, atlasID, previewBuffer, previewShader);
         ImVec2 avail = ImGui::GetContentRegionAvail();
         float previewSide = std::min(avail.x - 16, avail.y - 8);
@@ -353,23 +637,33 @@ void MobDesigner::show(bool* open, unsigned int atlasID, Framebuffer* previewBuf
                      previewSize, ImVec2(0, 1), ImVec2(1, 0));
 
         // Interaction: hover detection on the Image item
-        static bool s_mobDrag = false;
+        static bool s_mobOrbit = false;
+        static bool s_mobPan = false;
         if (ImGui::IsItemHovered()) {
-            if (ImGui::IsMouseClicked(ImGuiMouseButton_Left))
-                s_mobDrag = true;
+            if (ImGui::IsMouseClicked(ImGuiMouseButton_Right))
+                s_mobOrbit = true;
+            if (ImGui::IsMouseClicked(ImGuiMouseButton_Middle))
+                s_mobPan = true;
             float scroll = ImGui::GetIO().MouseWheel;
             if (scroll != 0.0f) {
-                m_dist -= scroll * 0.4f;
+                m_dist += scroll * 0.4f;
                 m_dist  = std::clamp(m_dist, 2.0f, 15.0f);
             }
         }
-        if (!ImGui::IsMouseDown(ImGuiMouseButton_Left))
-            s_mobDrag = false;
-        if (s_mobDrag) {
+        if (!ImGui::IsMouseDown(ImGuiMouseButton_Right))
+            s_mobOrbit = false;
+        if (!ImGui::IsMouseDown(ImGuiMouseButton_Middle))
+            s_mobPan = false;
+        if (s_mobOrbit) {
             ImGuiIO& pio = ImGui::GetIO();
-            m_yaw   += pio.MouseDelta.x * 0.01f;
+            m_yaw   -= pio.MouseDelta.x * 0.01f;
             m_pitch += pio.MouseDelta.y * 0.01f;
             m_pitch  = std::clamp(m_pitch, -1.4f, 1.4f);
+        }
+        if (s_mobPan) {
+            ImGuiIO& pio = ImGui::GetIO();
+            m_panX -= pio.MouseDelta.x * 0.005f * m_dist;
+            m_panY += pio.MouseDelta.y * 0.005f * m_dist;
         }
     }
     ImGui::EndChild();
@@ -391,7 +685,15 @@ void MobDesigner::show(bool* open, unsigned int atlasID, Framebuffer* previewBuf
                     a.offset.z != b.offset.z || a.size.x != b.size.x || a.size.y != b.size.y ||
                     a.size.z != b.size.z || a.color.x != b.color.x || a.color.y != b.color.y ||
                     a.color.z != b.color.z || a.affectedByLegAnim != b.affectedByLegAnim ||
-                    a.affectedByHeadAnim != b.affectedByHeadAnim) { changed = true; break; }
+                    a.affectedByHeadAnim != b.affectedByHeadAnim ||
+                    a.usePerFace != b.usePerFace || a.texX != b.texX || a.texY != b.texY) { changed = true; break; }
+                if (!changed && a.usePerFace) {
+                    for (int f = 0; f < 6; f++) {
+                        if (a.faces[f].texX != b.faces[f].texX || a.faces[f].texY != b.faces[f].texY ||
+                            a.faces[f].color.x != b.faces[f].color.x || a.faces[f].color.y != b.faces[f].color.y ||
+                            a.faces[f].color.z != b.faces[f].color.z) { changed = true; break; }
+                    }
+                }
             }
         }
         if (changed) {
@@ -430,6 +732,14 @@ void MobDesigner::show(bool* open, unsigned int atlasID, Framebuffer* previewBuf
         ImGui::EndPopup();
     }
 
+    // ===== AI BEHAVIOR EDITOR =====
+    ImGui::Separator();
+    if (ImGui::CollapsingHeader("AI Behavior Graph", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::BeginChild("##AIBehaviorPanel", ImVec2(0, 450), true);
+        m_aiEditor.show(def.aiGraph);
+        ImGui::EndChild();
+    }
+
     ImGui::EndChild(); // end ##MobRightSide
     ImGui::End();
 }
@@ -445,7 +755,7 @@ void MobDesigner::renderPreview(const MobDefinition& def, unsigned int atlasID, 
     buf->bind();
     int pw = buf->getWidth(), ph = buf->getHeight();
     glViewport(0, 0, pw, ph);
-    glClearColor(0.08f, 0.08f, 0.14f, 1.0f);
+    glClearColor(0.14f, 0.14f, 0.22f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LESS);
@@ -472,6 +782,16 @@ void MobDesigner::renderPreview(const MobDefinition& def, unsigned int atlasID, 
     float camX = cx + m_dist * cosf(m_pitch) * sinf(m_yaw);
     float camY = cy + m_dist * sinf(m_pitch);
     float camZ = cz + m_dist * cosf(m_pitch) * cosf(m_yaw);
+    // Apply pan offset in camera-local right/up directions
+    Vec3 fwd = normalize(Vec3{cx - camX, cy - camY, cz - camZ});
+    Vec3 right = normalize(cross(fwd, {0, 1, 0}));
+    Vec3 up2 = cross(right, fwd);
+    camX += right.x * m_panX + up2.x * m_panY;
+    camY += right.y * m_panX + up2.y * m_panY;
+    camZ += right.z * m_panX + up2.z * m_panY;
+    cx   += right.x * m_panX + up2.x * m_panY;
+    cy   += right.y * m_panX + up2.y * m_panY;
+    cz   += right.z * m_panX + up2.z * m_panY;
     Mat4 view = lookAt({camX, camY, camZ}, {cx, cy, cz}, {0, 1, 0});
     float aspect = (float)pw / (float)ph;
     Mat4 proj = perspective(40.0f * (3.14159f / 180.0f), aspect, 0.1f, 40.0f);
@@ -509,32 +829,63 @@ void MobDesigner::renderPreview(const MobDefinition& def, unsigned int atlasID, 
         gridMesh.destroy();
     }
 
-    // --- Draw mob parts ---
-    MeshBuilder mb;
-    float s = 1.0f / 16.0f;
-    // Use an untouched white atlas tile (15,15) so vertex color alone determines part color
-    float u = 15 * s, v = 15 * s;
+    // --- Draw mob parts (per-part transform, per-part textures) ---
+    {
+        for (int partIdx = 0; partIdx < (int)def.parts.size(); partIdx++) {
+            const auto& part = def.parts[partIdx];
 
-    for (const auto& part : def.parts) {
-        Vec3 o = part.offset;
-        Vec3 sz = part.size;
-        Vec3 c = part.color;
+            // Build a textured unit cube for this part
+            MeshBuilder partMb;
+            float s = 1.0f / 16.0f;
 
-        mb.addFace({o.x+sz.x, o.y, o.z}, {o.x+sz.x, o.y, o.z+sz.z}, {o.x+sz.x, o.y+sz.y, o.z+sz.z}, {o.x+sz.x, o.y+sz.y, o.z}, {1,0,0}, u,v,u+s,v+s, c.x, c.y, c.z);
-        mb.addFace({o.x, o.y, o.z+sz.z}, {o.x, o.y, o.z}, {o.x, o.y+sz.y, o.z}, {o.x, o.y+sz.y, o.z+sz.z}, {-1,0,0}, u,v,u+s,v+s, c.x, c.y, c.z);
-        mb.addFace({o.x, o.y+sz.y, o.z}, {o.x+sz.x, o.y+sz.y, o.z}, {o.x+sz.x, o.y+sz.y, o.z+sz.z}, {o.x, o.y+sz.y, o.z+sz.z}, {0,1,0}, u,v,u+s,v+s, c.x, c.y, c.z);
-        mb.addFace({o.x, o.y, o.z+sz.z}, {o.x+sz.x, o.y, o.z+sz.z}, {o.x+sz.x, o.y, o.z}, {o.x, o.y, o.z}, {0,-1,0}, u,v,u+s,v+s, c.x, c.y, c.z);
-        mb.addFace({o.x, o.y, o.z+sz.z}, {o.x+sz.x, o.y, o.z+sz.z}, {o.x+sz.x, o.y+sz.y, o.z+sz.z}, {o.x, o.y+sz.y, o.z+sz.z}, {0,0,1}, u,v,u+s,v+s, c.x, c.y, c.z);
-        mb.addFace({o.x+sz.x, o.y, o.z}, {o.x, o.y, o.z}, {o.x, o.y+sz.y, o.z}, {o.x+sz.x, o.y+sz.y, o.z}, {0,0,-1}, u,v,u+s,v+s, c.x, c.y, c.z);
+            auto addPartFace = [&](int fi, Vec3 p1, Vec3 p2, Vec3 p3, Vec3 p4, Vec3 n) {
+                int tx = part.texX, ty = part.texY;
+                Vec3 fc = part.color;
+                if (part.usePerFace) {
+                    tx = part.faces[fi].texX;
+                    ty = part.faces[fi].texY;
+                    fc = part.faces[fi].color;
+                }
+                float u1 = tx * s, v1 = ty * s;
+                partMb.addFace(p1, p2, p3, p4, n, u1, v1, u1+s, v1+s, fc.x, fc.y, fc.z);
+            };
+
+            addPartFace(0, {1,0,0},{1,0,1},{1,1,1},{1,1,0}, {1,0,0});
+            addPartFace(1, {0,0,1},{0,0,0},{0,1,0},{0,1,1}, {-1,0,0});
+            addPartFace(2, {0,1,0},{1,1,0},{1,1,1},{0,1,1}, {0,1,0});
+            addPartFace(3, {0,0,1},{1,0,1},{1,0,0},{0,0,0}, {0,-1,0});
+            addPartFace(4, {0,0,1},{1,0,1},{1,1,1},{0,1,1}, {0,0,1});
+            addPartFace(5, {1,0,0},{0,0,0},{0,1,0},{1,1,0}, {0,0,-1});
+
+            GLMesh partMesh;
+            partMesh.upload(partMb.getVertices());
+
+            // Static preview: no animation, so pivot cancels out -> just offset + scale
+            Mat4 p = translate(part.offset) * scale(part.size);
+            shdr->setMat4("uModel", p);
+            shdr->setVec3("uColorTint", {1, 1, 1});
+            partMesh.draw();
+
+            // Highlight selected part with yellow wireframe outline
+            if (partIdx == m_selectedPartForPreview) {
+                glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+                glLineWidth(3.0f);
+                glDisable(GL_DEPTH_TEST);
+                shdr->setVec3("uColorTint", {1.0f, 1.0f, 0.3f});
+                partMesh.draw();
+                glEnable(GL_DEPTH_TEST);
+                glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+            }
+
+            partMesh.destroy();
+        }
+
+        shdr->setVec3("uColorTint", {1, 1, 1});
+        shdr->setMat4("uModel", Mat4::identity());
     }
 
-    GLMesh mesh;
-    mesh.upload(mb.getVertices());
-    mesh.draw();
-
-    mesh.destroy();
-
     // Restore GL state
+    buf->resolve();
     glBindFramebuffer(GL_FRAMEBUFFER, prevFBO);
     glViewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3]);
     glDepthFunc(GL_LEQUAL); // Restore main renderer's depth func
@@ -542,6 +893,142 @@ void MobDesigner::renderPreview(const MobDefinition& def, unsigned int atlasID, 
 
 unsigned int MobDesigner::getPreviewTexture(Framebuffer* buf) {
     return buf ? buf->getTexture() : 0;
+}
+
+void MobDesigner::renderPartPreview(const MobPart& part, unsigned int atlasID, Framebuffer* buf, Shader* shdr) {
+    if (!buf || !shdr) return;
+
+    GLint prevFBO = 0, prevViewport[4] = {};
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &prevFBO);
+    glGetIntegerv(GL_VIEWPORT, prevViewport);
+
+    buf->bind();
+    int pw = buf->getWidth(), ph = buf->getHeight();
+    glViewport(0, 0, pw, ph);
+    glClearColor(0.12f, 0.12f, 0.18f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LESS);
+
+    shdr->use();
+
+    // Tight camera centered on a unit cube
+    float cx = 0.5f, cy = 0.5f, cz = 0.5f;
+    float dist = 2.5f;
+    float yaw = 0.6f, pitch = 0.35f;
+    float camX = cx + dist * cosf(pitch) * sinf(yaw);
+    float camY = cy + dist * sinf(pitch);
+    float camZ = cz + dist * cosf(pitch) * cosf(yaw);
+    Mat4 view = lookAt({camX, camY, camZ}, {cx, cy, cz}, {0, 1, 0});
+    float aspect = (float)pw / (float)ph;
+    Mat4 proj = perspective(40.0f * (3.14159f / 180.0f), aspect, 0.1f, 20.0f);
+
+    shdr->setMat4("uProjection", proj);
+    shdr->setMat4("uView", view);
+    shdr->setMat4("uModel", Mat4::identity());
+    shdr->setVec3("uLightDir", {-0.4f, -0.8f, -0.5f});
+    shdr->setVec3("uColorTint", {1, 1, 1});
+    shdr->setInt("uTexture", 0);
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, atlasID);
+
+    // Build textured unit cube for this part
+    MeshBuilder partMb;
+    float s = 1.0f / 16.0f;
+    auto addFace = [&](int fi, Vec3 p1, Vec3 p2, Vec3 p3, Vec3 p4, Vec3 n) {
+        int tx = part.texX, ty = part.texY;
+        Vec3 fc = part.color;
+        if (part.usePerFace) {
+            tx = part.faces[fi].texX;
+            ty = part.faces[fi].texY;
+            fc = part.faces[fi].color;
+        }
+        float u1 = tx * s, v1 = ty * s;
+        partMb.addFace(p1, p2, p3, p4, n, u1, v1, u1 + s, v1 + s, fc.x, fc.y, fc.z);
+    };
+    addFace(0, {1,0,0},{1,0,1},{1,1,1},{1,1,0}, {1,0,0});
+    addFace(1, {0,0,1},{0,0,0},{0,1,0},{0,1,1}, {-1,0,0});
+    addFace(2, {0,1,0},{1,1,0},{1,1,1},{0,1,1}, {0,1,0});
+    addFace(3, {0,0,1},{1,0,1},{1,0,0},{0,0,0}, {0,-1,0});
+    addFace(4, {0,0,1},{1,0,1},{1,1,1},{0,1,1}, {0,0,1});
+    addFace(5, {1,0,0},{0,0,0},{0,1,0},{1,1,0}, {0,0,-1});
+
+    GLMesh mesh;
+    mesh.upload(partMb.getVertices());
+    mesh.draw();
+
+    // Highlight hovered face with wireframe outline
+    if (m_hoveredFace >= 0 && m_hoveredFace < 6 && part.usePerFace) {
+        MeshBuilder hlMb;
+        float hs = 1.0f / 16.0f;
+        int htx = part.faces[m_hoveredFace].texX;
+        int hty = part.faces[m_hoveredFace].texY;
+        float hu1 = htx * hs, hv1 = hty * hs;
+
+        // Build a single-face mesh for the hovered face
+        auto addHlFace = [&](Vec3 p1, Vec3 p2, Vec3 p3, Vec3 p4, Vec3 n) {
+            hlMb.addFace(p1, p2, p3, p4, n, hu1, hv1, hu1 + hs, hv1 + hs, 1.0f, 1.0f, 1.0f);
+        };
+        switch (m_hoveredFace) {
+            case 0: addHlFace({1,0,0},{1,0,1},{1,1,1},{1,1,0}, {1,0,0}); break;
+            case 1: addHlFace({0,0,1},{0,0,0},{0,1,0},{0,1,1}, {-1,0,0}); break;
+            case 2: addHlFace({0,1,0},{1,1,0},{1,1,1},{0,1,1}, {0,1,0}); break;
+            case 3: addHlFace({0,0,1},{1,0,1},{1,0,0},{0,0,0}, {0,-1,0}); break;
+            case 4: addHlFace({0,0,1},{1,0,1},{1,1,1},{0,1,1}, {0,0,1}); break;
+            case 5: addHlFace({1,0,0},{0,0,0},{0,1,0},{1,1,0}, {0,0,-1}); break;
+        }
+        GLMesh hlMesh;
+        hlMesh.upload(hlMb.getVertices());
+        glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+        glLineWidth(3.0f);
+        glDisable(GL_DEPTH_TEST);
+        shdr->setVec3("uColorTint", {0.4f, 0.8f, 1.0f});
+        hlMesh.draw();
+        glEnable(GL_DEPTH_TEST);
+        glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+        shdr->setVec3("uColorTint", {1, 1, 1});
+        hlMesh.destroy();
+    }
+
+    // Highlight selected face with a brighter wireframe
+    if (m_selectedFace >= 0 && m_selectedFace < 6 && part.usePerFace) {
+        MeshBuilder selMb;
+        float ss = 1.0f / 16.0f;
+        int stx = part.faces[m_selectedFace].texX;
+        int sty = part.faces[m_selectedFace].texY;
+        float su1 = stx * ss, sv1 = sty * ss;
+
+        auto addSelFace = [&](Vec3 p1, Vec3 p2, Vec3 p3, Vec3 p4, Vec3 n) {
+            selMb.addFace(p1, p2, p3, p4, n, su1, sv1, su1 + ss, sv1 + ss, 1.0f, 1.0f, 1.0f);
+        };
+        switch (m_selectedFace) {
+            case 0: addSelFace({1,0,0},{1,0,1},{1,1,1},{1,1,0}, {1,0,0}); break;
+            case 1: addSelFace({0,0,1},{0,0,0},{0,1,0},{0,1,1}, {-1,0,0}); break;
+            case 2: addSelFace({0,1,0},{1,1,0},{1,1,1},{0,1,1}, {0,1,0}); break;
+            case 3: addSelFace({0,0,1},{1,0,1},{1,0,0},{0,0,0}, {0,-1,0}); break;
+            case 4: addSelFace({0,0,1},{1,0,1},{1,1,1},{0,1,1}, {0,0,1}); break;
+            case 5: addSelFace({1,0,0},{0,0,0},{0,1,0},{1,1,0}, {0,0,-1}); break;
+        }
+        GLMesh selMesh;
+        selMesh.upload(selMb.getVertices());
+        glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+        glLineWidth(3.0f);
+        glDisable(GL_DEPTH_TEST);
+        shdr->setVec3("uColorTint", {1.0f, 1.0f, 0.3f});
+        selMesh.draw();
+        glEnable(GL_DEPTH_TEST);
+        glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+        shdr->setVec3("uColorTint", {1, 1, 1});
+        selMesh.destroy();
+    }
+
+    mesh.destroy();
+
+    buf->resolve();
+    glBindFramebuffer(GL_FRAMEBUFFER, prevFBO);
+    glViewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3]);
+    glDepthFunc(GL_LEQUAL);
 }
 
 // --- Save / Undo / Redo Implementation ---
@@ -624,6 +1111,14 @@ void MobDesigner::saveBackup() const {
         out.write((const char*)&p.color, sizeof(Vec3));
         out.write((const char*)&p.affectedByLegAnim, sizeof(bool));
         out.write((const char*)&p.affectedByHeadAnim, sizeof(bool));
+        out.write((const char*)&p.usePerFace, sizeof(bool));
+        out.write((const char*)&p.texX, sizeof(int));
+        out.write((const char*)&p.texY, sizeof(int));
+        for (int f = 0; f < 6; f++) {
+            out.write((const char*)&p.faces[f].texX, sizeof(int));
+            out.write((const char*)&p.faces[f].texY, sizeof(int));
+            out.write((const char*)&p.faces[f].color, sizeof(Vec3));
+        }
     }
 }
 
@@ -665,10 +1160,50 @@ bool MobDesigner::loadBackup() {
         in.read((char*)&p.color, sizeof(Vec3));
         in.read((char*)&p.affectedByLegAnim, sizeof(bool));
         in.read((char*)&p.affectedByHeadAnim, sizeof(bool));
+        in.read((char*)&p.usePerFace, sizeof(bool));
+        in.read((char*)&p.texX, sizeof(int));
+        in.read((char*)&p.texY, sizeof(int));
+        for (int f = 0; f < 6; f++) {
+            in.read((char*)&p.faces[f].texX, sizeof(int));
+            in.read((char*)&p.faces[f].texY, sizeof(int));
+            in.read((char*)&p.faces[f].color, sizeof(Vec3));
+        }
     }
     return in.good();
 }
 
 void MobDesigner::clearBackup() const {
     std::remove(kBackupFile);
+}
+
+BlockDefinition MobDesigner::getPartAsBlock(int partIdx) const {
+    BlockDefinition block{};
+    if (partIdx < 0 || partIdx >= (int)m_workingCopy.parts.size()) return block;
+    const auto& part = m_workingCopy.parts[partIdx];
+    block.id = 255; // Temporary ID for external editing
+    block.name = part.name;
+    block.usePerFace = part.usePerFace;
+    block.color = part.color;
+    block.texX = part.texX;
+    block.texY = part.texY;
+    for (int i = 0; i < 6; i++) {
+        block.faces[i] = part.faces[i];
+    }
+    return block;
+}
+
+void MobDesigner::applyBlockToPart(int partIdx, const BlockDefinition& block) {
+    if (partIdx < 0 || partIdx >= (int)m_workingCopy.parts.size()) return;
+    pushUndo();
+    auto& part = m_workingCopy.parts[partIdx];
+    part.name = block.name;
+    part.usePerFace = block.usePerFace;
+    part.color = block.color;
+    part.texX = block.texX;
+    part.texY = block.texY;
+    for (int i = 0; i < 6; i++) {
+        part.faces[i] = block.faces[i];
+    }
+    m_dirty = true;
+    saveBackup();
 }

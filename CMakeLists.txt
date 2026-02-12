@@ -74,6 +74,13 @@ set(SOURCES
     src/MobDesigner.cpp
     src/SoundEditor.cpp
     src/EngineProfiler.cpp
+    src/AINodeEditor.cpp
+    src/ToolDesigner.cpp
+    src/IntroScreen.cpp
+    src/WeatherDesigner.cpp
+    src/WorldEditor.cpp
+    src/SoundDesigner.cpp
+    src/TextureDesigner.cpp
     ${glfw_SOURCE_DIR}/deps/glad_gl.c
     ${imgui_SOURCE_DIR}/imgui.cpp
     ${imgui_SOURCE_DIR}/imgui_draw.cpp
@@ -84,6 +91,11 @@ set(SOURCES
 )
 
 add_executable(${PROJECT_NAME} ${SOURCES})
+
+# Windows application icon
+if(WIN32)
+    target_sources(${PROJECT_NAME} PRIVATE resources.rc)
+endif()
 
 # Link libraries
 target_link_libraries(${PROJECT_NAME} glfw OpenGL::GL)

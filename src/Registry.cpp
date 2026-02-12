@@ -10,18 +10,51 @@ void GameRegistry::init() {
         registerBlock(b);
     };
 
-    // Register default blocks
+    // Register default blocks — vertex colors are lightened since they multiply
+    // with the already-colored texture atlas. Closer to {1,1,1} = less tinting.
     registerDefBlock(0, "Air", {0,0,0}, 0, 0, true, false);
-    registerDefBlock(1, "Dirt", {0.55f, 0.40f, 0.25f}, 0, 0);
-    registerDefBlock(2, "Grass", {0.30f, 0.75f, 0.30f}, 1, 0);
-    registerDefBlock(3, "Stone", {0.60f, 0.60f, 0.65f}, 3, 0);
-    registerDefBlock(4, "Water", {0.20f, 0.40f, 0.90f}, 4, 0, true, true);
-    registerDefBlock(5, "Lava", {1.00f, 0.30f, 0.00f}, 5, 0, false, true);
-    registerDefBlock(6, "Wood", {0.45f, 0.30f, 0.15f}, 6, 0);
-    registerDefBlock(7, "Leaves", {0.20f, 0.60f, 0.20f}, 7, 0, true);
-    registerDefBlock(8, "Sand", {0.95f, 0.90f, 0.60f}, 8, 0);
+    registerDefBlock(1, "Dirt", {0.85f, 0.75f, 0.65f}, 0, 0);
+    registerDefBlock(3, "Stone", {0.80f, 0.80f, 0.82f}, 3, 0);
+    registerDefBlock(4, "Water", {0.45f, 0.65f, 1.00f}, 4, 0, true, true);
+    registerDefBlock(5, "Lava", {1.00f, 0.60f, 0.20f}, 5, 0, false, true);
+    registerDefBlock(6, "Wood", {0.75f, 0.60f, 0.45f}, 6, 0);
+    registerDefBlock(7, "Leaves", {0.50f, 0.80f, 0.50f}, 7, 0, true);
+    registerDefBlock(8, "Sand", {1.00f, 0.98f, 0.80f}, 8, 0);
     registerDefBlock(9, "Snow", {1.00f, 1.00f, 1.00f}, 9, 0);
+    registerDefBlock(10, "Bedrock", {0.30f, 0.30f, 0.30f}, 10, 0);
+    registerDefBlock(11, "Red Flower", {1.00f, 0.50f, 0.45f}, 11, 0, true);
+    registerDefBlock(12, "Blue Flower", {0.50f, 0.60f, 1.00f}, 12, 0, true);
+    registerDefBlock(13, "Tall Grass", {0.55f, 0.80f, 0.50f}, 13, 0, true);
     registerDefBlock(14, "Glass", {1.00f, 1.00f, 1.00f}, 14, 0, true);
+    registerDefBlock(15, "Coal Ore", {0.70f, 0.70f, 0.70f}, 0, 1);
+    registerDefBlock(16, "Iron Ore", {0.82f, 0.78f, 0.75f}, 1, 1);
+    registerDefBlock(17, "Gold Ore", {0.95f, 0.90f, 0.60f}, 2, 1);
+    registerDefBlock(18, "Diamond Ore", {0.65f, 0.95f, 0.95f}, 3, 1);
+    registerDefBlock(19, "Birch Wood", {0.92f, 0.90f, 0.88f}, 4, 1);
+    registerDefBlock(20, "Birch Leaves", {0.55f, 0.82f, 0.50f}, 5, 1, true);
+    registerDefBlock(21, "Cherry Wood", {0.98f, 0.95f, 0.96f}, 6, 1);
+    registerDefBlock(22, "Cherry Leaves", {0.95f, 0.70f, 0.80f}, 7, 1, true);
+    registerDefBlock(23, "Cobblestone", {0.70f, 0.70f, 0.70f}, 8, 1);
+    registerDefBlock(24, "Mossy Stone", {0.65f, 0.72f, 0.65f}, 9, 1);
+    registerDefBlock(25, "Oak Planks", {0.82f, 0.72f, 0.58f}, 10, 1);
+    registerDefBlock(26, "Bricks", {0.80f, 0.60f, 0.50f}, 11, 1);
+    registerDefBlock(27, "Ice", {0.85f, 0.92f, 1.00f}, 12, 1, true);
+    registerDefBlock(28, "Fire", {1.00f, 0.60f, 0.15f}, 5, 0, true);
+
+    // Grass: per-face textures (top=grass, sides=grass side, bottom=dirt)
+    {
+        BlockDefinition b;
+        b.id = BLOCK_GRASS; b.name = "Grass";
+        b.color = {0.55f, 0.85f, 0.55f}; b.texX = 1; b.texY = 0;
+        b.usePerFace = true;
+        b.faces[0] = {2, 0, {0.75f, 0.80f, 0.60f}}; // +X side
+        b.faces[1] = {2, 0, {0.75f, 0.80f, 0.60f}}; // -X side
+        b.faces[2] = {1, 0, {0.55f, 0.85f, 0.55f}}; // +Y top
+        b.faces[3] = {0, 0, {0.85f, 0.75f, 0.65f}}; // -Y bottom (dirt)
+        b.faces[4] = {2, 0, {0.75f, 0.80f, 0.60f}}; // +Z side
+        b.faces[5] = {2, 0, {0.75f, 0.80f, 0.60f}}; // -Z side
+        registerBlock(b);
+    }
 
     // Register default mobs with Minecraft-accurate part models.
     // Dimensions in voxel-world units (roughly 1 pixel = 1/16 block).
@@ -281,4 +314,124 @@ void GameRegistry::init() {
         m.parts.push_back({"Tent. 8", {-0.3125f,0.0f,  0.0f},    {0.125f, 0.5f, 0.125f}, {0.0625f, 0.5f, 0.0625f}, {0.22f, 0.32f, 0.52f}, true});
         registerMob(m);
     }
+
+    // --- Block breaking properties ---
+    auto setBreakProps = [&](uint8_t id, float breakTime, const std::string& toolType, int toolTier,
+                             float blastRes = 1.0f, int light = 0, bool gravity = false) {
+        auto it = m_blocks.find(id);
+        if (it == m_blocks.end()) return;
+        it->second.breakTime = breakTime;
+        it->second.requiredToolType = toolType;
+        it->second.requiredToolTier = toolTier;
+        it->second.blastResistance = blastRes;
+        it->second.lightEmission = light;
+        it->second.hasGravity = gravity;
+    };
+
+    // Air/Water/Lava are unbreakable or special
+    setBreakProps(BLOCK_AIR, 0.0f, "", 0);
+    setBreakProps(BLOCK_DIRT, 0.5f, "shovel", 0, 0.5f);
+    setBreakProps(BLOCK_GRASS, 0.6f, "shovel", 0, 0.6f);
+    setBreakProps(BLOCK_STONE, 1.5f, "pickaxe", 1, 6.0f);
+    setBreakProps(BLOCK_WATER, 0.0f, "", 0, 100.0f);
+    setBreakProps(BLOCK_LAVA, 0.0f, "", 0, 100.0f, 15);
+    setBreakProps(BLOCK_WOOD, 2.0f, "axe", 0, 2.0f);
+    setBreakProps(BLOCK_LEAVES, 0.2f, "", 0, 0.2f);
+    setBreakProps(BLOCK_SAND, 0.5f, "shovel", 0, 0.5f, 0, true);
+    setBreakProps(BLOCK_SNOW, 0.2f, "shovel", 0, 0.1f);
+    setBreakProps(BLOCK_BEDROCK, 1e9f, "", 0, 1e9f);
+    setBreakProps(BLOCK_FLOWER_RED, 0.0f, "", 0, 0.0f);
+    setBreakProps(BLOCK_FLOWER_BLUE, 0.0f, "", 0, 0.0f);
+    setBreakProps(BLOCK_TALL_GRASS, 0.0f, "", 0, 0.0f);
+    setBreakProps(BLOCK_GLASS, 0.3f, "", 0, 0.3f);
+    setBreakProps(BLOCK_COAL_ORE, 3.0f, "pickaxe", 1, 3.0f);
+    setBreakProps(BLOCK_IRON_ORE, 3.0f, "pickaxe", 2, 3.0f);
+    setBreakProps(BLOCK_GOLD_ORE, 3.0f, "pickaxe", 3, 3.0f);
+    setBreakProps(BLOCK_DIAMOND_ORE, 3.0f, "pickaxe", 3, 3.0f);
+    setBreakProps(BLOCK_BIRCH_WOOD, 2.0f, "axe", 0, 2.0f);
+    setBreakProps(BLOCK_BIRCH_LEAVES, 0.2f, "", 0, 0.2f);
+    setBreakProps(BLOCK_CHERRY_WOOD, 2.0f, "axe", 0, 2.0f);
+    setBreakProps(BLOCK_CHERRY_LEAVES, 0.2f, "", 0, 0.2f);
+    setBreakProps(BLOCK_COBBLESTONE, 2.0f, "pickaxe", 1, 6.0f);
+    setBreakProps(BLOCK_MOSSY_STONE, 2.0f, "pickaxe", 1, 6.0f);
+    setBreakProps(BLOCK_OAK_PLANKS, 2.0f, "axe", 0, 3.0f);
+    setBreakProps(BLOCK_BRICKS, 2.0f, "pickaxe", 1, 6.0f);
+    setBreakProps(BLOCK_ICE, 0.5f, "pickaxe", 0, 0.5f);
+    setBreakProps(BLOCK_FIRE, 0.0f, "", 0, 0.0f, 15);
+
+    // Special drops: coal ore drops coal (itself for now), diamond ore drops diamond
+    // Stone drops cobblestone
+    {
+        auto& stone = m_blocks[BLOCK_STONE];
+        stone.dropsItself = false;
+        stone.drops.push_back({BLOCK_COBBLESTONE, 1, 1, 1.0f});
+    }
+
+    // Glass drops nothing
+    {
+        auto& glass = m_blocks[BLOCK_GLASS];
+        glass.dropsItself = false;
+        // No drops entry = drops nothing
+    }
+
+    // --- Default tool definitions ---
+    // Helper: {id, name, type, tier, speed, damage, color, durability, atkSpeed, knockback}
+    auto regTool = [&](int id, const char* name, const char* type, int tier,
+                       float speed, float dmg, Vec3 col, int dur, float atkSpd = 1.0f, float kb = 0.0f) {
+        ToolDefinition t;
+        t.id = id; t.name = name; t.toolType = type; t.tier = tier;
+        t.speedMultiplier = speed; t.damage = dmg; t.color = col;
+        t.durability = dur; t.attackSpeed = atkSpd; t.knockback = kb;
+        registerTool(t);
+    };
+
+    // Pickaxes
+    regTool(1,  "Wooden Pickaxe",   "pickaxe", 1, 2.0f, 2.0f, {0.6f, 0.4f, 0.2f},  59, 1.2f);
+    regTool(2,  "Stone Pickaxe",    "pickaxe", 2, 4.0f, 3.0f, {0.5f, 0.5f, 0.5f},  131, 1.2f);
+    regTool(3,  "Iron Pickaxe",     "pickaxe", 3, 6.0f, 4.0f, {0.85f, 0.85f, 0.85f}, 250, 1.2f);
+    regTool(4,  "Diamond Pickaxe",  "pickaxe", 4, 8.0f, 5.0f, {0.3f, 0.9f, 0.9f}, 1561, 1.2f);
+    // Axes
+    regTool(5,  "Wooden Axe",       "axe", 1, 2.0f, 3.0f, {0.6f, 0.4f, 0.2f},  59, 0.8f);
+    regTool(6,  "Stone Axe",        "axe", 2, 4.0f, 4.0f, {0.5f, 0.5f, 0.5f},  131, 0.8f);
+    regTool(7,  "Iron Axe",         "axe", 3, 6.0f, 5.0f, {0.85f, 0.85f, 0.85f}, 250, 0.9f);
+    regTool(8,  "Diamond Axe",      "axe", 4, 8.0f, 6.0f, {0.3f, 0.9f, 0.9f}, 1561, 1.0f);
+    // Shovels
+    regTool(9,  "Wooden Shovel",    "shovel", 1, 2.0f, 1.0f, {0.6f, 0.4f, 0.2f},  59, 1.0f);
+    regTool(10, "Stone Shovel",     "shovel", 2, 4.0f, 2.0f, {0.5f, 0.5f, 0.5f},  131, 1.0f);
+    regTool(11, "Iron Shovel",      "shovel", 3, 6.0f, 3.0f, {0.85f, 0.85f, 0.85f}, 250, 1.0f);
+    regTool(12, "Diamond Shovel",   "shovel", 4, 8.0f, 4.0f, {0.3f, 0.9f, 0.9f}, 1561, 1.0f);
+    // Swords
+    regTool(13, "Wooden Sword",     "sword", 1, 1.0f, 4.0f, {0.6f, 0.4f, 0.2f},  59, 1.6f, 0.4f);
+    regTool(14, "Stone Sword",      "sword", 2, 1.0f, 5.0f, {0.5f, 0.5f, 0.5f},  131, 1.6f, 0.4f);
+    regTool(15, "Iron Sword",       "sword", 3, 1.0f, 6.0f, {0.85f, 0.85f, 0.85f}, 250, 1.6f, 0.4f);
+    regTool(16, "Diamond Sword",    "sword", 4, 1.0f, 7.0f, {0.3f, 0.9f, 0.9f}, 1561, 1.6f, 0.5f);
+    // Hoes
+    regTool(17, "Wooden Hoe",       "hoe", 1, 1.0f, 1.0f, {0.6f, 0.4f, 0.2f},  59, 1.0f);
+    regTool(18, "Stone Hoe",        "hoe", 2, 1.0f, 1.0f, {0.5f, 0.5f, 0.5f},  131, 2.0f);
+    regTool(19, "Iron Hoe",         "hoe", 3, 1.0f, 1.0f, {0.85f, 0.85f, 0.85f}, 250, 3.0f);
+    regTool(20, "Diamond Hoe",      "hoe", 4, 1.0f, 1.0f, {0.3f, 0.9f, 0.9f}, 1561, 4.0f);
+    // Bow & Shield
+    regTool(21, "Bow",              "bow", 1, 1.0f, 6.0f, {0.6f, 0.4f, 0.2f}, 384, 1.0f, 0.0f);
+    regTool(22, "Shield",           "shield", 1, 1.0f, 1.0f, {0.6f, 0.4f, 0.2f}, 336, 0.0f, 2.0f);
+    regTool(23, "Fishing Rod",      "fishing_rod", 1, 1.0f, 0.0f, {0.6f, 0.4f, 0.2f}, 64, 0.0f, 0.0f);
+
+    // --- Block physics defaults ---
+    auto setPhysics = [&](uint8_t id, float fric, float slip, int opa, bool flame, int burn, bool repl, int redstone) {
+        auto it = m_blocks.find(id);
+        if (it == m_blocks.end()) return;
+        auto& b = it->second;
+        b.friction = fric; b.slipperiness = slip; b.opacity = opa;
+        b.flammable = flame; b.burnTime = burn; b.replaceable = repl; b.redstonePower = redstone;
+    };
+    setPhysics(BLOCK_AIR,     0.0f, 0.0f, 0,  false, 0, true, 0);
+    setPhysics(BLOCK_WATER,   0.0f, 0.0f, 1,  false, 0, true, 0);
+    setPhysics(BLOCK_LAVA,    0.0f, 0.0f, 0,  false, 0, true, 0);
+    setPhysics(BLOCK_ICE,     0.1f, 0.98f, 3, false, 0, false, 0);
+    setPhysics(BLOCK_WOOD,    0.6f, 0.0f, 15, true, 300, false, 0);
+    setPhysics(BLOCK_LEAVES,  0.6f, 0.0f, 1,  true, 60, false, 0);
+    setPhysics(BLOCK_FIRE,    0.0f, 0.0f, 0,  false, 0, true, 0);
+    setPhysics(BLOCK_OAK_PLANKS, 0.6f, 0.0f, 15, true, 300, false, 0);
+    setPhysics(BLOCK_GLASS,   0.6f, 0.0f, 0,  false, 0, false, 0);
+    setPhysics(BLOCK_SAND,    0.6f, 0.0f, 15, false, 0, false, 0);
+    setPhysics(BLOCK_TALL_GRASS, 0.0f, 0.0f, 0, true, 60, true, 0);
 }

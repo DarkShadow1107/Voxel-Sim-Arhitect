@@ -89,6 +89,11 @@ static void addVoxelFace(std::vector<Vertex>& out, const Chunk& chunk, int x, in
         aoValues[3] = 1.0f - (checkAO(0, -1, -1) + checkAO(1, 0, -1) + checkAO(1, -1, -1));
     }
 
+    // Snow should not be darkened by AO - keep it bright white
+    if (type == BLOCK_SNOW) {
+        aoValues[0] = aoValues[1] = aoValues[2] = aoValues[3] = 1.0f;
+    }
+
     auto emit = [&](int i) {
         const float px = (float)x + corners[face][i][0];
         const float py = (float)y + corners[face][i][1];
@@ -106,26 +111,74 @@ static void addVoxelFace(std::vector<Vertex>& out, const Chunk& chunk, int x, in
     emit(0); emit(2); emit(3);
 }
 
+static bool isTransparent(uint8_t type) {
+    switch (type) {
+        case BLOCK_WATER:
+        case BLOCK_LAVA:
+        case BLOCK_GLASS:
+        case BLOCK_ICE:
+        case BLOCK_LEAVES:
+        case BLOCK_BIRCH_LEAVES:
+        case BLOCK_CHERRY_LEAVES:
+        case BLOCK_FLOWER_RED:
+        case BLOCK_FLOWER_BLUE:
+        case BLOCK_TALL_GRASS:
+        case BLOCK_FIRE:
+            return true;
+        default:
+            return false;
+    }
+}
+
+static bool shouldDrawFace(uint8_t self, uint8_t neighbor) {
+    if (neighbor == BLOCK_AIR) return true;
+    if (isTransparent(self)) return neighbor != self;
+    return isTransparent(neighbor);
+}
+
 std::vector<Vertex> MeshBuilder::buildGreedyMesh(const Chunk& chunk) {
-    std::vector<Vertex> verts;
-    verts.reserve(Chunk::SizeX * Chunk::SizeY * Chunk::SizeZ);
+    // Scan for highest non-air Y to skip empty vertical space
+    int maxY = 0;
+    for (int z = 0; z < Chunk::SizeZ; ++z) {
+        for (int x = 0; x < Chunk::SizeX; ++x) {
+            for (int y = Chunk::SizeY - 1; y >= 0; --y) {
+                if (chunk.get(x, y, z) != 0) {
+                    if (y + 1 > maxY) maxY = y + 1;
+                    break;
+                }
+            }
+        }
+    }
+    if (maxY == 0) return {};
+
+    std::vector<Vertex> opaque;
+    std::vector<Vertex> transparent;
+    opaque.reserve(4096);
+    transparent.reserve(1024);
+
+    int effectiveMaxY = std::min(maxY + 1, Chunk::SizeY);
 
     for (int z = 0; z < Chunk::SizeZ; ++z) {
-        for (int y = 0; y < Chunk::SizeY; ++y) {
+        for (int y = 0; y < effectiveMaxY; ++y) {
             for (int x = 0; x < Chunk::SizeX; ++x) {
                 uint8_t type = chunk.get(x, y, z);
                 if (type == 0) continue;
 
-                if (chunk.get(x + 1, y, z) == 0) addVoxelFace(verts, chunk, x, y, z, 0, type);
-                if (chunk.get(x - 1, y, z) == 0) addVoxelFace(verts, chunk, x, y, z, 1, type);
-                if (chunk.get(x, y + 1, z) == 0) addVoxelFace(verts, chunk, x, y, z, 2, type);
-                if (chunk.get(x, y - 1, z) == 0) addVoxelFace(verts, chunk, x, y, z, 3, type);
-                if (chunk.get(x, y, z + 1) == 0) addVoxelFace(verts, chunk, x, y, z, 4, type);
-                if (chunk.get(x, y, z - 1) == 0) addVoxelFace(verts, chunk, x, y, z, 5, type);
+                auto& target = isTransparent(type) ? transparent : opaque;
+
+                if (shouldDrawFace(type, chunk.get(x + 1, y, z))) addVoxelFace(target, chunk, x, y, z, 0, type);
+                if (shouldDrawFace(type, chunk.get(x - 1, y, z))) addVoxelFace(target, chunk, x, y, z, 1, type);
+                if (shouldDrawFace(type, chunk.get(x, y + 1, z))) addVoxelFace(target, chunk, x, y, z, 2, type);
+                if (shouldDrawFace(type, chunk.get(x, y - 1, z))) addVoxelFace(target, chunk, x, y, z, 3, type);
+                if (shouldDrawFace(type, chunk.get(x, y, z + 1))) addVoxelFace(target, chunk, x, y, z, 4, type);
+                if (shouldDrawFace(type, chunk.get(x, y, z - 1))) addVoxelFace(target, chunk, x, y, z, 5, type);
             }
         }
     }
-    return verts;
+
+    // Append transparent after opaque for correct alpha blending
+    opaque.insert(opaque.end(), transparent.begin(), transparent.end());
+    return opaque;
 }
 
 void MeshBuilder::addFace(Vec3 p1, Vec3 p2, Vec3 p3, Vec3 p4, Vec3 normal, float u1, float v1, float u2, float v2, float r, float g, float b) {

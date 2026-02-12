@@ -5,9 +5,28 @@
 #include <memory>
 #include <future>
 #include <mutex>
+#include <string>
+#include <filesystem>
 #include "Chunk.hpp"
 #include "GLMesh.hpp"
 #include "Math.hpp"
+
+struct WorldMetadata {
+    char name[64] = "New World";
+    int seed = 1337;
+    float frequency = 0.02f;
+    int baseHeight = 10;
+    float worldTime = 6000.0f;
+    uint32_t version = 1;
+    uint8_t reserved[32] = {};
+};
+
+struct WorldSaveInfo {
+    std::string filename;
+    std::string displayName;
+    size_t chunkCount = 0;
+    WorldMetadata metadata;
+};
 
 struct ChunkData {
     std::unique_ptr<Chunk> chunk;
@@ -26,8 +45,10 @@ public:
     void render(const class Shader& shader, const Mat4& viewProj);
 
     void clear();
-    void save(const std::string& filename);
-    void load(const std::string& filename);
+    void save(const std::string& filename, const WorldMetadata& meta);
+    bool load(const std::string& filename, WorldMetadata& metaOut);
+
+    static std::vector<WorldSaveInfo> listSaves(const std::string& directory = "saves");
 
     void setBlock(int x, int y, int z, uint8_t type);
     uint8_t getBlock(int x, int y, int z) const;

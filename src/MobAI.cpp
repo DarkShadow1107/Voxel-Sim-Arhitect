@@ -38,9 +38,137 @@ void MobAI::update(Mob& mob, Transform& transform, World& world, double dt, Vec3
         mob.ambientSoundTimer = 10.0f + (float)(std::rand() % 20000) / 1000.0f; // 10-30 seconds
     }
 
-    // AI State Machine
+    // AI State Machine - use graph if available, otherwise fallback to hardcoded
     float distToPlayer = length(transform.position - viewerPos);
-    
+
+    const auto& mobDef = GameRegistry::getInstance().getMob(mob.type);
+    bool useGraph = !mobDef.aiGraph.nodes.empty();
+
+    if (useGraph) {
+        // --- Graph-based AI evaluation ---
+        // Initialize to start node if needed
+        if (mob.currentAINode < 0 && mobDef.aiGraph.startNodeId >= 0) {
+            mob.currentAINode = mobDef.aiGraph.startNodeId;
+            mob.aiNodeTimer = 0.0f;
+        }
+
+        const AINode* currentNode = mobDef.aiGraph.findNode(mob.currentAINode);
+        if (currentNode) {
+            mob.aiNodeTimer += (float)dt;
+
+            // Evaluate outgoing connections for transitions
+            for (const auto& conn : mobDef.aiGraph.connections) {
+                if (conn.fromNodeId != mob.currentAINode) continue;
+
+                bool condMet = false;
+                float lhs = 0.0f;
+
+                if (conn.conditionType == "distance_to_player") {
+                    lhs = distToPlayer;
+                } else if (conn.conditionType == "hp_below") {
+                    lhs = mob.hp;
+                } else if (conn.conditionType == "hp_above") {
+                    lhs = mob.hp;
+                } else if (conn.conditionType == "is_day") {
+                    lhs = 1.0f; // Assume day for now (TODO: pass time of day)
+                } else if (conn.conditionType == "is_night") {
+                    lhs = 0.0f; // Assume not night
+                } else if (conn.conditionType == "in_water") {
+                    int mx = (int)std::floor(transform.position.x);
+                    int my = (int)std::floor(transform.position.y);
+                    int mz = (int)std::floor(transform.position.z);
+                    lhs = (world.getBlock(mx, my, mz) == 4) ? 1.0f : 0.0f;
+                } else if (conn.conditionType == "on_fire") {
+                    lhs = mob.onFireSeconds > 0.0f ? 1.0f : 0.0f;
+                } else if (conn.conditionType == "timer_expired") {
+                    lhs = mob.aiNodeTimer;
+                } else if (conn.conditionType == "random_chance") {
+                    lhs = (float)(std::rand() % 1000) / 1000.0f;
+                } else if (conn.conditionType == "was_attacked") {
+                    lhs = 0.0f; // TODO: track damage events
+                }
+
+                float rhs = conn.conditionValue;
+                if (conn.comparison == "<")       condMet = lhs < rhs;
+                else if (conn.comparison == ">")  condMet = lhs > rhs;
+                else if (conn.comparison == "<=") condMet = lhs <= rhs;
+                else if (conn.comparison == ">=") condMet = lhs >= rhs;
+                else if (conn.comparison == "==") condMet = std::abs(lhs - rhs) < 0.001f;
+
+                if (condMet) {
+                    mob.currentAINode = conn.toNodeId;
+                    mob.aiNodeTimer = 0.0f;
+                    currentNode = mobDef.aiGraph.findNode(mob.currentAINode);
+                    break;
+                }
+            }
+
+            // Execute current node behavior
+            if (currentNode) {
+                const std::string& action = currentNode->name;
+                float spd = currentNode->moveSpeed;
+
+                if (action == "Idle" || action == "Sleep") {
+                    mob.isMoving = false;
+                    mob.state = Mob::IDLE;
+                } else if (action == "Wander" || action == "wander_random") {
+                    mob.state = Mob::WANDER;
+                    handleWander(mob, dt);
+                } else if (action == "Follow" || action == "follow_player") {
+                    mob.state = Mob::FOLLOW;
+                    if (distToPlayer > 2.0f) {
+                        mob.isMoving = true;
+                        Vec3 dir = normalize(viewerPos - transform.position);
+                        float targetYaw = std::atan2(dir.x, dir.z) * 57.2957795f;
+                        float yawDelta = targetYaw - mob.yawDeg;
+                        while (yawDelta > 180.0f) yawDelta -= 360.0f;
+                        while (yawDelta < -180.0f) yawDelta += 360.0f;
+                        mob.yawDeg += yawDelta * std::min(1.0f, (float)dt * 5.0f);
+                    } else {
+                        mob.isMoving = false;
+                    }
+                } else if (action == "Flee" || action == "flee_from_player") {
+                    mob.state = Mob::FLEE;
+                    mob.isMoving = true;
+                    Vec3 dir = normalize(transform.position - viewerPos);
+                    float targetYaw = std::atan2(dir.x, dir.z) * 57.2957795f;
+                    float yawDelta = targetYaw - mob.yawDeg;
+                    while (yawDelta > 180.0f) yawDelta -= 360.0f;
+                    while (yawDelta < -180.0f) yawDelta += 360.0f;
+                    mob.yawDeg += yawDelta * std::min(1.0f, (float)dt * 6.0f);
+                } else if (action == "Attack" || action == "attack_player") {
+                    if (distToPlayer > 1.5f) {
+                        mob.isMoving = true;
+                        Vec3 dir = normalize(viewerPos - transform.position);
+                        float targetYaw = std::atan2(dir.x, dir.z) * 57.2957795f;
+                        float yawDelta = targetYaw - mob.yawDeg;
+                        while (yawDelta > 180.0f) yawDelta -= 360.0f;
+                        while (yawDelta < -180.0f) yawDelta += 360.0f;
+                        mob.yawDeg += yawDelta * std::min(1.0f, (float)dt * 5.0f);
+                    } else {
+                        mob.isMoving = false;
+                    }
+                } else if (action == "Patrol") {
+                    mob.state = Mob::WANDER;
+                    handleWander(mob, dt);
+                } else if (action == "swim_wander") {
+                    mob.state = Mob::WANDER;
+                    handleWander(mob, dt);
+                } else if (action == "fly_wander") {
+                    mob.state = Mob::WANDER;
+                    handleWander(mob, dt);
+                    mob.velocity.y = std::sin(mob.animTime) * 2.0f;
+                } else if (action == "jump") {
+                    mob.velocity.y = 6.0f;
+                } else {
+                    // Unknown action, idle
+                    mob.isMoving = false;
+                }
+            }
+        }
+    } else {
+    // --- Fallback: original hardcoded AI ---
+
     // Simple reaction to player
     if (mob.state != Mob::FLEE) {
         if (distToPlayer < 5.0f && (mob.type == MOB_DOG || mob.type == MOB_CAT)) {
@@ -90,6 +218,8 @@ void MobAI::update(Mob& mob, Transform& transform, World& world, double dt, Vec3
             }
             break;
     }
+
+    } // end else (fallback hardcoded AI)
 
     // 3. Environmental checks (water, lava, falling)
     handleEnvironment(mob, transform, world, dt);

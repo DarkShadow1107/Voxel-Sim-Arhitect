@@ -7,6 +7,9 @@
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 
+#include <cstring>
+#include <cmath>
+
 Renderer::Renderer() : m_window(nullptr) {}
 
 Renderer::~Renderer() {
@@ -32,6 +35,7 @@ bool Renderer::init(int width, int height, const std::string& title, bool fullsc
 #if defined(__APPLE__)
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
 #endif
+    glfwWindowHint(GLFW_SAMPLES, 4);
 
     GLFWmonitor* monitor = fullscreen ? glfwGetPrimaryMonitor() : nullptr;
     if (fullscreen) {
@@ -49,6 +53,38 @@ bool Renderer::init(int width, int height, const std::string& title, bool fullsc
 
     glfwMakeContextCurrent(m_window);
 
+    // --- Build and set a 32x32 isometric voxel-cube window icon ---
+    {
+        static unsigned char iconPixels[32 * 32 * 4];
+        std::memset(iconPixels, 0, sizeof(iconPixels));
+        for (int y = 0; y < 32; ++y) {
+            for (int x = 0; x < 32; ++x) {
+                int idx = (y * 32 + x) * 4;
+                float fx = static_cast<float>(x) - 15.5f;
+                float fy = static_cast<float>(y) - 15.5f;
+                bool top = (fy < 0.0f) && (std::abs(fx) * 0.5f + std::abs(fy + 4.0f) < 8.0f);
+                bool left = (fx < 0.0f) && (fy >= -std::abs(fx) * 0.5f) && (fy < 12.0f + fx * 0.5f) && (fx > -12.0f);
+                bool right = (fx >= 0.0f) && (fy >= -std::abs(fx) * 0.5f) && (fy < 12.0f - fx * 0.5f) && (fx < 12.0f);
+
+                if (top) {
+                    iconPixels[idx + 0] = 0x4C; iconPixels[idx + 1] = 0xAF;
+                    iconPixels[idx + 2] = 0x50; iconPixels[idx + 3] = 0xFF;
+                } else if (left) {
+                    iconPixels[idx + 0] = 0x5D; iconPixels[idx + 1] = 0x4E;
+                    iconPixels[idx + 2] = 0x37; iconPixels[idx + 3] = 0xFF;
+                } else if (right) {
+                    iconPixels[idx + 0] = 0x8B; iconPixels[idx + 1] = 0x69;
+                    iconPixels[idx + 2] = 0x14; iconPixels[idx + 3] = 0xFF;
+                }
+            }
+        }
+        GLFWimage icon;
+        icon.width  = 32;
+        icon.height = 32;
+        icon.pixels = iconPixels;
+        glfwSetWindowIcon(m_window, 1, &icon);
+    }
+
     if (!gladLoadGL((GLADloadfunc)glfwGetProcAddress)) {
         std::cerr << "GLAD load failed" << std::endl;
         glfwDestroyWindow(m_window);
@@ -56,6 +92,8 @@ bool Renderer::init(int width, int height, const std::string& title, bool fullsc
         glfwTerminate();
         return false;
     }
+
+    glEnable(GL_MULTISAMPLE);
 
     setVSync(true);
 

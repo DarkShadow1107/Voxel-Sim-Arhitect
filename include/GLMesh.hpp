@@ -28,4 +28,5 @@ private:
     unsigned int m_vao = 0;
     unsigned int m_vbo = 0;
     size_t m_vertexCount = 0;
+    size_t m_bufferCapacity = 0;
 };

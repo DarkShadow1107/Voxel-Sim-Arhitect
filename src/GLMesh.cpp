@@ -6,12 +6,13 @@ GLMesh::~GLMesh() {
     destroy();
 }
 
-GLMesh::GLMesh(GLMesh&& other) noexcept 
-    : m_vao(other.m_vao), m_vbo(other.m_vbo), m_vertexCount(other.m_vertexCount) 
+GLMesh::GLMesh(GLMesh&& other) noexcept
+    : m_vao(other.m_vao), m_vbo(other.m_vbo), m_vertexCount(other.m_vertexCount), m_bufferCapacity(other.m_bufferCapacity)
 {
     other.m_vao = 0;
     other.m_vbo = 0;
     other.m_vertexCount = 0;
+    other.m_bufferCapacity = 0;
 }
 
 GLMesh& GLMesh::operator=(GLMesh&& other) noexcept {
@@ -20,48 +21,68 @@ GLMesh& GLMesh::operator=(GLMesh&& other) noexcept {
         m_vao = other.m_vao;
         m_vbo = other.m_vbo;
         m_vertexCount = other.m_vertexCount;
+        m_bufferCapacity = other.m_bufferCapacity;
         other.m_vao = 0;
         other.m_vbo = 0;
         other.m_vertexCount = 0;
+        other.m_bufferCapacity = 0;
     }
     return *this;
 }
 
 bool GLMesh::upload(const std::vector<Vertex>& vertices) {
-    destroy();
-
     if (vertices.empty()) {
+        destroy();
         m_vertexCount = 0;
         return true;
     }
 
-    glGenVertexArrays(1, &m_vao);
-    glGenBuffers(1, &m_vbo);
+    GLsizeiptr newSize = (GLsizeiptr)(vertices.size() * sizeof(Vertex));
 
-    glBindVertexArray(m_vao);
-    glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
-    glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(vertices.size() * sizeof(Vertex)), vertices.data(), GL_STATIC_DRAW);
+    if (m_vao == 0) {
+        // First-time creation
+        glGenVertexArrays(1, &m_vao);
+        glGenBuffers(1, &m_vbo);
 
-    // location 0: position
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)0);
+        glBindVertexArray(m_vao);
+        glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
+        glBufferData(GL_ARRAY_BUFFER, newSize, vertices.data(), GL_DYNAMIC_DRAW);
 
-    // location 1: normal
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)(3 * sizeof(float)));
+        // location 0: position
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)0);
 
-    // location 2: color
-    glEnableVertexAttribArray(2);
-    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)(6 * sizeof(float)));
+        // location 1: normal
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)(3 * sizeof(float)));
 
-    // location 3: uv
-    glEnableVertexAttribArray(3);
-    glVertexAttribPointer(3, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)(9 * sizeof(float)));
+        // location 2: color
+        glEnableVertexAttribArray(2);
+        glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)(6 * sizeof(float)));
 
-    glBindVertexArray(0);
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
+        // location 3: uv
+        glEnableVertexAttribArray(3);
+        glVertexAttribPointer(3, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)(9 * sizeof(float)));
 
-    m_vertexCount = vertices.size();
+        glBindVertexArray(0);
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+        m_vertexCount = vertices.size();
+        m_bufferCapacity = vertices.size();
+    } else {
+        // Reuse existing VAO/VBO - only reallocate if buffer too small
+        glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
+        if (vertices.size() > m_bufferCapacity) {
+            // Need larger buffer: allocate with some headroom
+            size_t newCapacity = vertices.size() + vertices.size() / 4;
+            glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(newCapacity * sizeof(Vertex)), nullptr, GL_DYNAMIC_DRAW);
+            m_bufferCapacity = newCapacity;
+        }
+        glBufferSubData(GL_ARRAY_BUFFER, 0, newSize, vertices.data());
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
+        m_vertexCount = vertices.size();
+    }
+
     return true;
 }
 
@@ -85,4 +106,5 @@ void GLMesh::destroy() {
         m_vao = 0;
     }
     m_vertexCount = 0;
+    m_bufferCapacity = 0;
 }

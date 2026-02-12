@@ -52,10 +52,15 @@ struct Mob {
     Vec3 targetPos;
     float stateTimer;
 
-    Mob() : type(MOB_COW), hp(10.0f), maxHp(10.0f), wanderTimer(0.0f), wanderYawDeg(0.0f), 
-           yawDeg(0.0f), velocity{0,0,0}, animTime(0.0f), isMoving(false), 
+    // AI graph tracking
+    int currentAINode = -1;
+    float aiNodeTimer = 0.0f;
+
+    Mob() : type(MOB_COW), hp(10.0f), maxHp(10.0f), wanderTimer(0.0f), wanderYawDeg(0.0f),
+           yawDeg(0.0f), velocity{0,0,0}, animTime(0.0f), isMoving(false),
            onFireSeconds(0.0f), ambientSoundTimer(0.0f), sheepColor(COLOR_WHITE),
-           state(IDLE), targetPos{0,0,0}, stateTimer(0.0f) {}
+           state(IDLE), targetPos{0,0,0}, stateTimer(0.0f),
+           currentAINode(-1), aiNodeTimer(0.0f) {}
 };
 
 class FastNoiseLite;

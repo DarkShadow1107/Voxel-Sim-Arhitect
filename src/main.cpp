@@ -24,6 +24,7 @@
 #include "World.hpp"
 #include "MobAI.hpp"
 #include "Registry.hpp"
+#include "IntroScreen.hpp"
 
 #include "FastNoiseLite.h"
 
@@ -36,6 +37,7 @@
 
 #include <fstream>
 #include <sstream>
+#include <cstring>
 
 enum WeatherType { WEATHER_CLEAR, WEATHER_RAIN, WEATHER_SNOW };
 
@@ -50,9 +52,10 @@ struct ChatMessage {
     ImVec4 color = ImVec4(1,1,1,1);
 };
 
-void saveUIConfig(bool showProfiler, bool showMemory, bool showECS, bool showWorldEditor, 
-                  bool showSettings, bool showSoundEditor, bool showBlockDesigner, 
-                  bool showMobDesigner, bool showInteractionEditor, bool fullscreen) {
+void saveUIConfig(bool showProfiler, bool showMemory, bool showECS, bool showWorldEditor,
+                  bool showSettings, bool showSoundEditor, bool showBlockDesigner,
+                  bool showMobDesigner, bool showInteractionEditor, bool showToolDesigner,
+                  bool showSoundDesigner, bool showAdvWorldEditor, bool fullscreen) {
     std::ofstream file("ui_config.txt");
     if (file.is_open()) {
         file << showProfiler << "\n";
@@ -64,14 +67,18 @@ void saveUIConfig(bool showProfiler, bool showMemory, bool showECS, bool showWor
         file << showBlockDesigner << "\n";
         file << showMobDesigner << "\n";
         file << showInteractionEditor << "\n";
+        file << showToolDesigner << "\n";
         file << fullscreen << "\n";
+        file << showSoundDesigner << "\n";
+        file << showAdvWorldEditor << "\n";
         file.close();
     }
 }
 
-void loadUIConfig(bool& showProfiler, bool& showMemory, bool& showECS, bool& showWorldEditor, 
-                  bool& showSettings, bool& showSoundEditor, bool& showBlockDesigner, 
-                  bool& showMobDesigner, bool& showInteractionEditor, bool& fullscreen) {
+void loadUIConfig(bool& showProfiler, bool& showMemory, bool& showECS, bool& showWorldEditor,
+                  bool& showSettings, bool& showSoundEditor, bool& showBlockDesigner,
+                  bool& showMobDesigner, bool& showInteractionEditor, bool& showToolDesigner,
+                  bool& showSoundDesigner, bool& showAdvWorldEditor, bool& fullscreen) {
     std::ifstream file("ui_config.txt");
     if (file.is_open()) {
         file >> showProfiler;
@@ -83,7 +90,10 @@ void loadUIConfig(bool& showProfiler, bool& showMemory, bool& showECS, bool& sho
         file >> showBlockDesigner;
         file >> showMobDesigner;
         file >> showInteractionEditor;
+        file >> showToolDesigner;
         file >> fullscreen;
+        file >> showSoundDesigner;
+        file >> showAdvWorldEditor;
         file.close();
     }
 }
@@ -140,6 +150,7 @@ int main() {
     Texture atlas;
     atlas.generateAtlas();
     gui.setAtlasTextureID(atlas.getID());
+    gui.setAtlasPointer(&atlas);
 
     // Game State
     WeatherType currentWeather = WEATHER_CLEAR;
@@ -153,6 +164,12 @@ int main() {
     bool isRaining = false;
     float playerOnFireSeconds = 0.0f;
 
+    // World save/load state
+    char worldSaveName[64] = "My World";
+    bool showWorldList = false;
+    std::vector<WorldSaveInfo> worldSaves;
+    std::string loadedWorldFile;
+
     // UI State
     bool showProfiler = true;
     bool showMemory = true;
@@ -163,13 +180,18 @@ int main() {
     bool showBlockDesigner = false;
     bool showMobDesigner = false;
     bool showInteractionEditor = false;
+    bool showToolDesigner = false;
+    bool showWeatherDesigner = false;
+    bool showSoundDesigner = false;
+    bool showAdvWorldEditor = false;
+    bool showTextureDesigner = false;
     bool vsync = true;
     bool wireframe = false;
     bool backfaceCulling = false;
     bool fullscreen = true;
     bool menuMode = true; // Start in menu mode
 
-    loadUIConfig(showProfiler, showMemory, showECS, showWorldEditor, showSettings, showSoundEditor, showBlockDesigner, showMobDesigner, showInteractionEditor, fullscreen);
+    loadUIConfig(showProfiler, showMemory, showECS, showWorldEditor, showSettings, showSoundEditor, showBlockDesigner, showMobDesigner, showInteractionEditor, showToolDesigner, showSoundDesigner, showAdvWorldEditor, fullscreen);
 
     renderer.setVSync(vsync);
     renderer.setWireframe(wireframe);
@@ -246,6 +268,7 @@ int main() {
     int worldBaseHeight = 10;
     int renderDistance = 4;
     uint8_t selectedBlock = 1; // 1=Dirt, 2=Grass, 3=Stone
+    int equippedToolId = 0;    // 0 = no tool (hand)
 
     struct Inventory {
         int counts[256] = {0};
@@ -316,6 +339,11 @@ int main() {
     
     std::cout << "Engine initialized successfully." << std::endl;
 
+    // Animated intro screen
+    IntroScreen intro;
+    intro.init();
+    bool introActive = true;
+
     // Main Loop
     bool breaking = false;
     int breakX = 0, breakY = 0, breakZ = 0;
@@ -329,6 +357,16 @@ int main() {
         lastTime = currentTime;
 
         const float dt = deltaMs * 0.001f;
+
+        // Intro screen: render and skip rest of frame while active
+        if (introActive) {
+            gui.beginFrame();
+            introActive = !intro.update(dt);
+            intro.render();
+            gui.endFrame();
+            renderer.swapBuffers();
+            continue;
+        }
 
         // Global Input Handling
         if (glfwGetKey(renderer.getWindow(), GLFW_KEY_ESCAPE) == GLFW_PRESS) {
@@ -390,12 +428,23 @@ int main() {
                 am.setAmbientLoop("water", "assets/sounds/water_ambient.wav", nearWater, 0.45f);
                 am.setAmbientLoop("lava", "assets/sounds/lava_ambient.wav", nearLava, 0.65f);
                 am.setAmbientLoop("fire", "assets/sounds/fire_ambient.wav", nearFire, 0.55f);
-                am.setAmbientLoop("rain", "assets/sounds/rain_ambient.wav", isRaining, 0.4f);
+
+                // Weather-driven ambient sound from Weather Designer
+                const auto& wp = gui.getWeatherDesigner().getActivePreset();
+                bool hasWeatherSound = !wp.ambientSound.empty() && wp.particleCount > 0;
+                am.setAmbientLoop("rain", wp.ambientSound.empty() ? "assets/sounds/rain_ambient.wav" : wp.ambientSound, hasWeatherSound, wp.ambientVolume);
             }
-            if (isRaining && (std::rand() % 2000 == 0)) {
-                Vec3 p = camera.position();
-                Vec3 tPos = {p.x + (std::rand()%160-80), p.y + 60, p.z + (std::rand()%160-80)};
-                AudioManager::getInstance().playThunder(tPos, p);
+            // Weather-driven thunder
+            {
+                const auto& wp = gui.getWeatherDesigner().getActivePreset();
+                if (wp.hasThunder && wp.particleCount > 0) {
+                    int thunderChance = std::max(1, (int)(1.0f / std::max(wp.thunderFrequency, 0.0001f)));
+                    if ((std::rand() % thunderChance) == 0) {
+                        Vec3 p = camera.position();
+                        Vec3 tPos = {p.x + (std::rand()%160-80), p.y + 60, p.z + (std::rand()%160-80)};
+                        AudioManager::getInstance().playThunder(tPos, p);
+                    }
+                }
             }
         }
 
@@ -416,7 +465,7 @@ int main() {
         // Editor-style dockspace (production-feel).
         ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport());
         
-        gui.showMainMenuBar(showProfiler, showMemory, showECS, showWorldEditor, showSettings, showSoundEditor, showBlockDesigner, showMobDesigner, showInteractionEditor);
+        gui.showMainMenuBar(showProfiler, showMemory, showECS, showWorldEditor, showSettings, showSoundEditor, showBlockDesigner, showMobDesigner, showInteractionEditor, showToolDesigner, showWeatherDesigner, showSoundDesigner, showAdvWorldEditor, showTextureDesigner);
 
         if (showProfiler) gui.showProfiler(deltaMs);
         if (showMemory) {
@@ -427,7 +476,13 @@ int main() {
         gui.showSoundEditor(&showSoundEditor);
         gui.showBlockDesigner(&showBlockDesigner);
         gui.showMobDesigner(&showMobDesigner);
+        gui.showToolDesigner(&showToolDesigner);
         gui.showInteractionEditor(&showInteractionEditor);
+        gui.showWeatherDesigner(&showWeatherDesigner);
+        gui.showAdvWorldEditor(&showAdvWorldEditor);
+        gui.showSoundDesigner(&showSoundDesigner);
+        gui.showTextureDesigner(&showTextureDesigner);
+        gui.coordinateMobBlockEdit(showBlockDesigner);
         if (showSettings) gui.showSettings(&showSettings, vsync, wireframe, fullscreen, backfaceCulling, renderer);
 
         // Viewport Window
@@ -509,6 +564,82 @@ int main() {
                         advY += 50.0f;
                     }
                 }
+
+                // Player fire overlay (viewport only)
+                if (playerOnFireSeconds > 0.0f) {
+                    playerOnFireSeconds = std::max(0.0f, playerOnFireSeconds - (float)dt);
+                    float t = (float)glfwGetTime();
+                    int bands = 14;
+                    for (int i = 0; i < bands; ++i) {
+                        float y0 = screenPos.y + (viewportSize.y / bands) * i;
+                        float y1 = screenPos.y + (viewportSize.y / bands) * (i + 1);
+                        float wobble = sin(t * 3.0f + i * 1.7f) * 18.0f;
+                        ImU32 col = IM_COL32(255, (int)(120 + 60 * sin(t + i)), 40, 55);
+                        drawList->AddRectFilled(ImVec2(screenPos.x + wobble, y0), ImVec2(screenPos.x + viewportSize.x + wobble, y1), col);
+                    }
+                }
+
+                // Snowfall rendering (viewport only)
+                if (!snowParticles.empty()) {
+                    Mat4 viewProj = camera.projectionMatrix() * camera.viewMatrix();
+                    for (auto& sp : snowParticles) {
+                        Vec3 worldPos = camera.position() + sp.position;
+                        Vec4 clipPos = viewProj * Vec4(worldPos.x, worldPos.y, worldPos.z, 1.0f);
+                        if (clipPos.w > 0.1f) {
+                            float ndcX = clipPos.x / clipPos.w;
+                            float ndcY = clipPos.y / clipPos.w;
+                            if (ndcX >= -1.0f && ndcX <= 1.0f && ndcY >= -1.0f && ndcY <= 1.0f) {
+                                float sx = screenPos.x + (ndcX * 0.5f + 0.5f) * viewportSize.x;
+                                float sy = screenPos.y + (1.0f - (ndcY * 0.5f + 0.5f)) * viewportSize.y;
+                                float size = 3.0f / clipPos.w * 15.0f;
+                                size = std::clamp(size, 1.5f, 6.0f);
+                                drawList->AddCircleFilled(ImVec2(sx, sy), size, IM_COL32(255, 255, 255, 200));
+                            }
+                        }
+                    }
+                }
+
+                // Weather Effects (viewport only - from Weather Designer)
+                const auto& weatherPreset = gui.getWeatherDesigner().getActivePreset();
+                if (weatherPreset.particleCount > 0) {
+                    float wt = (float)glfwGetTime();
+                    float windDrift = weatherPreset.windStrength * std::cos(weatherPreset.windDirection * 3.14159f / 180.0f) * 3.0f;
+                    ImU32 partCol = IM_COL32(
+                        (int)(weatherPreset.particleColor.x * 255),
+                        (int)(weatherPreset.particleColor.y * 255),
+                        (int)(weatherPreset.particleColor.z * 255),
+                        (int)(weatherPreset.particleAlpha * 255));
+
+                    if (!weatherPreset.snowStyle) {
+                        for (int i = 0; i < weatherPreset.particleCount; ++i) {
+                            float rx = (float)(rand() % std::max(1, (int)viewportSize.x));
+                            float ry = (float)(rand() % std::max(1, (int)viewportSize.y));
+                            float off = std::fmod(ry + wt * weatherPreset.particleSpeed, viewportSize.y);
+                            float lineLen = std::clamp(weatherPreset.particleSpeed * 0.015f, 5.0f, 25.0f);
+                            drawList->AddLine(
+                                ImVec2(screenPos.x + rx, screenPos.y + off),
+                                ImVec2(screenPos.x + rx + windDrift * 0.3f, screenPos.y + off + lineLen),
+                                partCol, std::clamp(weatherPreset.particleSize * 0.5f, 0.5f, 3.0f));
+                        }
+                    } else {
+                        for (int i = 0; i < weatherPreset.particleCount; ++i) {
+                            float rx = (float)(rand() % std::max(1, (int)viewportSize.x));
+                            float ry = (float)(rand() % std::max(1, (int)viewportSize.y));
+                            float off = std::fmod(ry + wt * weatherPreset.particleSpeed, viewportSize.y);
+                            float drift = std::sin(wt + i) * windDrift * 2.0f;
+                            drawList->AddCircleFilled(
+                                ImVec2(screenPos.x + rx + drift, screenPos.y + off),
+                                weatherPreset.particleSize, partCol);
+                        }
+                    }
+
+                    // Fog overlay (viewport only)
+                    if (weatherPreset.fogDensity > 0.01f) {
+                        int fogAlpha = (int)(weatherPreset.fogDensity * 80.0f);
+                        ImU32 fc = IM_COL32((int)(weatherPreset.fogColor.x * 255), (int)(weatherPreset.fogColor.y * 255), (int)(weatherPreset.fogColor.z * 255), fogAlpha);
+                        drawList->AddRectFilled(screenPos, ImVec2(screenPos.x + viewportSize.x, screenPos.y + viewportSize.y), fc);
+                    }
+                }
             }
         }
         const bool viewportHovered = ImGui::IsWindowHovered();
@@ -537,6 +668,9 @@ int main() {
                 if (ImGui::SliderInt("Render Distance", &rd, 2, 16)) {
                     world.setRenderDistance(rd);
                 }
+                ImGui::InputInt("Seed", &worldSeed);
+                ImGui::SliderFloat("Frequency", &worldFrequency, 0.01f, 0.20f, "%.3f");
+                ImGui::SliderInt("Base Height", &worldBaseHeight, 1, Chunk::SizeY - 2);
                 ImGui::Text("Active Chunks: %zu", world.getChunkCount());
             }
 
@@ -550,14 +684,108 @@ int main() {
             }
 
             ImGui::Separator();
-            if (ImGui::Button("Save World")) world.save("world.dat");
-            ImGui::SameLine();
-            if (ImGui::Button("Load World")) world.load("world.dat");
+            if (ImGui::CollapsingHeader("Save / Load", ImGuiTreeNodeFlags_DefaultOpen)) {
+                ImGui::InputText("World Name", worldSaveName, sizeof(worldSaveName));
 
-            ImGui::SliderInt("Render Distance", &renderDistance, 1, 12);
-            ImGui::InputInt("Seed", &worldSeed);
-            ImGui::SliderFloat("Frequency", &worldFrequency, 0.01f, 0.20f, "%.3f");
-            ImGui::SliderInt("Base Height", &worldBaseHeight, 1, Chunk::SizeY - 2);
+                if (ImGui::Button("Save World")) {
+                    // Sanitize name for filename
+                    std::string safeName;
+                    for (const char* p = worldSaveName; *p; ++p) {
+                        char c = *p;
+                        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-' || c == ' ')
+                            safeName += c;
+                    }
+                    if (safeName.empty()) safeName = "Unnamed";
+
+                    WorldMetadata meta;
+                    std::strncpy(meta.name, worldSaveName, sizeof(meta.name) - 1);
+                    meta.name[sizeof(meta.name) - 1] = '\0';
+                    meta.seed = worldSeed;
+                    meta.frequency = worldFrequency;
+                    meta.baseHeight = worldBaseHeight;
+                    meta.worldTime = worldTime;
+
+                    std::string path = "saves/" + safeName + ".vsa";
+                    world.save(path, meta);
+                    loadedWorldFile = path;
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Load World...")) {
+                    worldSaves = World::listSaves("saves");
+                    showWorldList = true;
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("New World")) {
+                    world.clear();
+                    loadedWorldFile.clear();
+                }
+
+                if (!loadedWorldFile.empty()) {
+                    ImGui::TextColored(ImVec4(0.5f, 0.8f, 0.5f, 1.0f), "File: %s", loadedWorldFile.c_str());
+                }
+            }
+
+            // World list popup
+            if (showWorldList) {
+                ImGui::OpenPopup("World List");
+            }
+            if (ImGui::BeginPopupModal("World List", &showWorldList, ImGuiWindowFlags_AlwaysAutoResize)) {
+                ImGui::Text("Saved Worlds:");
+                ImGui::Separator();
+
+                if (worldSaves.empty()) {
+                    ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "No saved worlds found.");
+                    ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Save a world first!");
+                } else {
+                    ImGui::BeginChild("WorldListScroll", ImVec2(400, 300), true);
+                    for (size_t i = 0; i < worldSaves.size(); ++i) {
+                        const auto& save = worldSaves[i];
+                        ImGui::PushID((int)i);
+
+                        bool selected = false;
+                        if (ImGui::Selectable("##worldEntry", &selected, ImGuiSelectableFlags_SpanAllColumns, ImVec2(0, 50))) {
+                            WorldMetadata loadedMeta;
+                            if (world.load(save.filename, loadedMeta)) {
+                                std::strncpy(worldSaveName, loadedMeta.name, sizeof(worldSaveName) - 1);
+                                worldSaveName[sizeof(worldSaveName) - 1] = '\0';
+                                worldSeed = loadedMeta.seed;
+                                worldFrequency = loadedMeta.frequency;
+                                worldBaseHeight = loadedMeta.baseHeight;
+                                worldTime = loadedMeta.worldTime;
+                                loadedWorldFile = save.filename;
+
+                                // Update noise generators with loaded seed
+                                noise.SetSeed(worldSeed);
+                                biomeNoise.SetSeed(worldSeed + 20);
+                                continentalNoise.SetSeed(worldSeed + 10);
+
+                                camera.setPosition({0.0f, 30.0f, 0.0f});
+                            }
+                            showWorldList = false;
+                        }
+
+                        // Draw world info over the selectable
+                        ImVec2 pos = ImGui::GetItemRectMin();
+                        ImDrawList* dl = ImGui::GetWindowDrawList();
+                        char nameLabel[128];
+                        snprintf(nameLabel, sizeof(nameLabel), "%s", save.displayName.c_str());
+                        dl->AddText(ImVec2(pos.x + 8, pos.y + 4), IM_COL32(255, 255, 255, 255), nameLabel);
+
+                        char infoLabel[128];
+                        snprintf(infoLabel, sizeof(infoLabel), "Chunks: %zu  |  Seed: %d", save.chunkCount, save.metadata.seed);
+                        dl->AddText(ImVec2(pos.x + 8, pos.y + 24), IM_COL32(180, 180, 180, 255), infoLabel);
+
+                        ImGui::PopID();
+                    }
+                    ImGui::EndChild();
+                }
+
+                ImGui::Separator();
+                if (ImGui::Button("Cancel", ImVec2(120, 0))) {
+                    showWorldList = false;
+                }
+                ImGui::EndPopup();
+            }
 
             ImGui::Separator();
             ImGui::Text("Block Palette:");
@@ -696,18 +924,28 @@ int main() {
                 static bool lmbPressed = false;
                 static bool rmbPressed = false;
 
-                auto breakSecondsFor = [&](uint8_t type) {
-                    switch (type) {
-                        case BLOCK_STONE: return 1.0f;
-                        case BLOCK_COAL_ORE:
-                        case BLOCK_IRON_ORE:
-                        case BLOCK_GOLD_ORE:
-                        case BLOCK_DIAMOND_ORE:
-                            return 1.2f;
-                        case BLOCK_BEDROCK: return std::numeric_limits<float>::infinity();
-                        case BLOCK_WOOD: return 0.9f;
-                        default: return 0.45f;
+                auto breakSecondsFor = [&](uint8_t type) -> float {
+                    const auto& blockDef = GameRegistry::getInstance().getBlock(type);
+                    float baseTime = blockDef.breakTime;
+                    if (baseTime <= 0.0f || baseTime >= 1e8f) return std::numeric_limits<float>::infinity();
+
+                    // Check tool requirements and apply speed multiplier
+                    const ToolDefinition* tool = (equippedToolId > 0) ? GameRegistry::getInstance().getTool(equippedToolId) : nullptr;
+                    if (tool && !blockDef.requiredToolType.empty() && tool->toolType == blockDef.requiredToolType) {
+                        if (tool->tier >= blockDef.requiredToolTier) {
+                            baseTime /= tool->speedMultiplier;
+                        }
                     }
+                    return baseTime;
+                };
+
+                auto canHarvest = [&](uint8_t type) -> bool {
+                    const auto& blockDef = GameRegistry::getInstance().getBlock(type);
+                    if (blockDef.requiredToolType.empty()) return true;
+                    if (blockDef.requiredToolTier == 0) return true;
+                    const ToolDefinition* tool = (equippedToolId > 0) ? GameRegistry::getInstance().getTool(equippedToolId) : nullptr;
+                    if (!tool) return false;
+                    return tool->toolType == blockDef.requiredToolType && tool->tier >= blockDef.requiredToolTier;
                 };
 
                 if (glfwGetMouseButton(renderer.getWindow(), GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS) {
@@ -727,7 +965,23 @@ int main() {
                             if (secs < std::numeric_limits<float>::infinity()) {
                                 breakProgress += (float)dt / secs;
                                 if (breakProgress >= 1.0f) {
-                                    inventory.counts[type]++;
+                                    // Handle drops based on registry
+                                    if (canHarvest(type)) {
+                                        const auto& blockDef = GameRegistry::getInstance().getBlock(type);
+                                        if (blockDef.dropsItself) {
+                                            inventory.counts[type]++;
+                                        } else {
+                                            for (const auto& drop : blockDef.drops) {
+                                                float roll = (float)(rand() % 1000) / 1000.0f;
+                                                if (roll <= drop.chance) {
+                                                    int count = drop.minCount;
+                                                    if (drop.maxCount > drop.minCount)
+                                                        count += rand() % (drop.maxCount - drop.minCount + 1);
+                                                    inventory.counts[drop.blockId] += count;
+                                                }
+                                            }
+                                        }
+                                    }
                                     for (auto& adv : advancements) {
                                         if (!adv.achieved && adv.blockType == type && inventory.counts[type] >= adv.requiredCount) {
                                             adv.achieved = true;
@@ -812,10 +1066,21 @@ int main() {
                 uint8_t bBody = world.getBlock(px, pyBody, pz);
                 bool inWater = isWater(bFeet) || isWater(bBody);
                 bool inLava = isLava(bFeet) || isLava(bBody);
+
+                // Detect water surface: feet in water but body in air
+                bool onWaterSurface = false;
+                if (!isFlying && inWater && !inLava) {
+                    bool feetInWater = isWater(bFeet);
+                    bool bodyInAir = !isWater(bBody);
+                    if (feetInWater && bodyInAir) {
+                        onWaterSurface = true;
+                    }
+                }
+
                 if (inWater) speedMultiplier *= 0.65f;
                 if (inLava) speedMultiplier *= 0.25f;
                 if (inLava) playerOnFireSeconds = 2.0f;
-                
+
                 const float speed = baseSpeed * speedMultiplier;
 
                 float forward = 0.0f;
@@ -829,12 +1094,24 @@ int main() {
                 if (glfwGetKey(renderer.getWindow(), GLFW_KEY_SPACE) == GLFW_PRESS) up += speed * dt;
                 if (glfwGetKey(renderer.getWindow(), GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS) up -= speed * dt;
 
-                // Swim feel: slight buoyancy in water unless diving
+                // Water physics: surface floating, swimming, diving
                 if (inWater && !isFlying) {
-                    if (glfwGetKey(renderer.getWindow(), GLFW_KEY_SPACE) == GLFW_PRESS) {
-                        up = speed * dt * 0.8f; // Swim up
-                    } else if (glfwGetKey(renderer.getWindow(), GLFW_KEY_LEFT_SHIFT) != GLFW_PRESS) {
-                        up = speed * dt * 0.15f; // Buoyancy
+                    if (onWaterSurface) {
+                        // At water surface: float in place, no oscillation
+                        if (glfwGetKey(renderer.getWindow(), GLFW_KEY_SPACE) == GLFW_PRESS) {
+                            up = speed * dt * 0.8f; // Jump out / swim up
+                        } else if (glfwGetKey(renderer.getWindow(), GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS) {
+                            up = -speed * dt * 0.5f; // Dive down
+                        } else {
+                            up = 0.0f; // Float in place
+                        }
+                    } else {
+                        // Fully submerged: buoyancy
+                        if (glfwGetKey(renderer.getWindow(), GLFW_KEY_SPACE) == GLFW_PRESS) {
+                            up = speed * dt * 0.8f; // Swim up
+                        } else if (glfwGetKey(renderer.getWindow(), GLFW_KEY_LEFT_SHIFT) != GLFW_PRESS) {
+                            up = speed * dt * 0.15f; // Gentle buoyancy
+                        }
                     }
                 }
 
@@ -936,30 +1213,16 @@ int main() {
             }
         }
 
-        // Player fire overlay
-        if (playerOnFireSeconds > 0.0f) {
-            playerOnFireSeconds = std::max(0.0f, playerOnFireSeconds - (float)dt);
-            ImDrawList* draw = ImGui::GetForegroundDrawList();
-            ImVec2 s = ImGui::GetIO().DisplaySize;
-            float t = (float)glfwGetTime();
-            int bands = 14;
-            for (int i = 0; i < bands; ++i) {
-                float y0 = (s.y / bands) * i;
-                float y1 = (s.y / bands) * (i + 1);
-                float wobble = sin(t * 3.0f + i * 1.7f) * 18.0f;
-                ImU32 col = IM_COL32(255, (int)(120 + 60 * sin(t + i)), 40, 55);
-                draw->AddRectFilled(ImVec2(0 + wobble, y0), ImVec2(s.x + wobble, y1), col);
-            }
-        }
+        // Player fire overlay (rendered inside viewport only below)
 
-        // Snowfall effect in Polar/Snowy biomes
+        // Snowfall effect: track biome state for viewport rendering
+        bool isSnowingBiome = false;
         {
             Vec3 p = camera.position();
             float bn = biomeNoise.GetNoise(p.x, p.z);
-            bool isSnowingBiome = (bn < 0.1f); // Polar or Snowy
-            
+            isSnowingBiome = (bn < 0.1f);
+
             if (isSnowingBiome) {
-                // Spawn new particles
                 if (snowParticles.size() < 800) {
                     for (int i = 0; i < 15; ++i) {
                         SnowParticle sp;
@@ -975,35 +1238,14 @@ int main() {
                 }
             }
 
-            ImDrawList* draw = ImGui::GetForegroundDrawList();
-            ImVec2 s = ImGui::GetIO().DisplaySize;
-            Mat4 viewProj = camera.projectionMatrix() * camera.viewMatrix();
-
+            // Update particle positions (but don't render yet)
             for (auto it = snowParticles.begin(); it != snowParticles.end(); ) {
                 it->position.x += it->velocity.x * dt;
                 it->position.y += it->velocity.y * dt;
                 it->position.z += it->velocity.z * dt;
                 it->life -= dt;
-
-                // Wrap around player
                 if (it->position.y < -10.0f) it->position.y = 20.0f;
-                
-                // Project to screen
-                Vec3 worldPos = camera.position() + it->position;
-                Vec4 clipPos = viewProj * Vec4(worldPos.x, worldPos.y, worldPos.z, 1.0f);
-                
-                if (clipPos.w > 0.1f && it->life > 0) {
-                    float ndcX = clipPos.x / clipPos.w;
-                    float ndcY = clipPos.y / clipPos.w;
-                    if (ndcX >= -1.0f && ndcX <= 1.0f && ndcY >= -1.0f && ndcY <= 1.0f) {
-                        float screenX = (ndcX * 0.5f + 0.5f) * s.x;
-                        float screenY = (1.0f - (ndcY * 0.5f + 0.5f)) * s.y;
-                        float size = 3.0f / clipPos.w * 15.0f;
-                        size = std::clamp(size, 1.5f, 6.0f);
-                        draw->AddCircleFilled(ImVec2(screenX, screenY), size, IM_COL32(255, 255, 255, 200));
-                    }
-                    ++it;
-                } else if (it->life <= 0) {
+                if (it->life <= 0) {
                     it = snowParticles.erase(it);
                 } else {
                     ++it;
@@ -1073,13 +1315,34 @@ int main() {
             }
         }
 
+        // Update Weather Designer
+        gui.getWeatherDesigner().update(dt, worldTime);
+
+        // Get weather preset for rendering
+        const auto& weatherPreset = gui.getWeatherDesigner().getActivePreset();
+
         // Day/Night Cycle Simulation
         float dayProgress = worldTime / 24000.0f;
         float sunAngle = dayProgress * 2.0f * 3.14159f;
         float sunY = std::sin(sunAngle);
         Vec3 lightDir = normalize(Vec3{std::cos(sunAngle), sunY, -0.25f});
-        Vec3 skyColor = Vec3{0.4f, 0.6f, 0.9f} * std::max(0.1f, sunY);
-        if (sunY < 0) skyColor = Vec3{0.05f, 0.05f, 0.1f}; // Night sky
+
+        // Sky color from Weather Designer preset
+        Vec3 skyColorDay = weatherPreset.skyColorDay;
+        Vec3 skyColorNight = weatherPreset.skyColorNight;
+        Vec3 skyColor;
+        if (sunY > 0) {
+            skyColor = skyColorDay * std::max(0.1f, sunY) * weatherPreset.skyBrightness;
+        } else {
+            skyColor = skyColorNight * weatherPreset.skyBrightness;
+        }
+        // Apply fog tint
+        if (weatherPreset.fogDensity > 0.01f) {
+            float fogMix = weatherPreset.fogDensity * 0.5f;
+            skyColor.x = skyColor.x * (1.0f - fogMix) + weatherPreset.fogColor.x * fogMix;
+            skyColor.y = skyColor.y * (1.0f - fogMix) + weatherPreset.fogColor.y * fogMix;
+            skyColor.z = skyColor.z * (1.0f - fogMix) + weatherPreset.fogColor.z * fogMix;
+        }
 
         // Render world into framebuffer
         if (viewportSize.x > 0 && viewportSize.y > 0) {
@@ -1127,11 +1390,37 @@ int main() {
                         if (part.affectedByLegAnim) rotX = legAngle;
                         if (part.affectedByHeadAnim) rotX += std::sin(mob.animTime * 0.4f) * 0.05f;
 
-                        Mat4 p = root * translate(part.offset) * rotateX(rotX) * rotateY(rotY) * rotateZ(rotZ) * translate(-part.pivot) * scale(part.size);
+                        Mat4 p = root * translate(part.offset) * translate(part.pivot) * rotateX(rotX) * rotateY(rotY) * rotateZ(rotZ) * translate(-part.pivot) * scale(part.size);
                         voxelShader.setMat4("uModel", p);
-                        Vec3 partTint = part.color * (mob.type == MOB_SHEEP ? tint : Vec3{1,1,1});
-                        voxelShader.setVec3("uColorTint", partTint);
-                        mobMeshes[0].draw();
+
+                        // Build per-part textured mesh
+                        MeshBuilder partMb;
+                        float ts = 1.0f / 16.0f;
+                        auto addMobFace = [&](int fi, Vec3 p1, Vec3 p2, Vec3 p3, Vec3 p4, Vec3 n) {
+                            int tx = part.texX, ty = part.texY;
+                            Vec3 fc = part.color;
+                            if (part.usePerFace) {
+                                tx = part.faces[fi].texX;
+                                ty = part.faces[fi].texY;
+                                fc = part.faces[fi].color;
+                            }
+                            // Apply sheep tint
+                            if (mob.type == MOB_SHEEP) { fc.x *= tint.x; fc.y *= tint.y; fc.z *= tint.z; }
+                            float u1 = tx * ts, v1 = ty * ts;
+                            partMb.addFace(p1, p2, p3, p4, n, u1, v1, u1 + ts, v1 + ts, fc.x, fc.y, fc.z);
+                        };
+                        addMobFace(0, {1,0,0},{1,0,1},{1,1,1},{1,1,0}, {1,0,0});
+                        addMobFace(1, {0,0,1},{0,0,0},{0,1,0},{0,1,1}, {-1,0,0});
+                        addMobFace(2, {0,1,0},{1,1,0},{1,1,1},{0,1,1}, {0,1,0});
+                        addMobFace(3, {0,0,1},{1,0,1},{1,0,0},{0,0,0}, {0,-1,0});
+                        addMobFace(4, {0,0,1},{1,0,1},{1,1,1},{0,1,1}, {0,0,1});
+                        addMobFace(5, {1,0,0},{0,0,0},{0,1,0},{1,1,0}, {0,0,-1});
+
+                        GLMesh partMesh;
+                        partMesh.upload(partMb.getVertices());
+                        voxelShader.setVec3("uColorTint", {1, 1, 1});
+                        partMesh.draw();
+                        partMesh.destroy();
                     }
 
                     voxelShader.setVec3("uColorTint", Vec3{1,1,1});
@@ -1208,42 +1497,8 @@ int main() {
                 crackMeshes[stage].draw();
             }
 
-            // Weather Effects (Rain/Snow)
-            if (currentWeather != WEATHER_CLEAR) {
-                ImDrawList* drawList = ImGui::GetWindowDrawList();
-                ImVec2 screenPos = ImGui::GetCursorScreenPos();
-                float t = (float)glfwGetTime();
-                
-                if (currentWeather == WEATHER_RAIN) {
-                    // Minecraft-style rain: vertical blue lines
-                    for (int i = 0; i < 250; ++i) {
-                        float rx = (float)(rand() % (int)viewportSize.x);
-                        float ry = (float)(rand() % (int)viewportSize.y);
-                        float speed = 800.0f;
-                        float offset = std::fmod(ry + t * speed, viewportSize.y);
-                        drawList->AddLine(
-                            ImVec2(screenPos.x + rx, screenPos.y + offset), 
-                            ImVec2(screenPos.x + rx, screenPos.y + offset + 15), 
-                            IM_COL32(80, 120, 255, 180), 1.5f
-                        );
-                    }
-                } else {
-                    // Snow: drifting white circles
-                    for (int i = 0; i < 150; ++i) {
-                        float rx = (float)(rand() % (int)viewportSize.x);
-                        float ry = (float)(rand() % (int)viewportSize.y);
-                        float speed = 150.0f;
-                        float offset = std::fmod(ry + t * speed, viewportSize.y);
-                        float drift = std::sin(t + i) * 20.0f;
-                        drawList->AddCircleFilled(
-                            ImVec2(screenPos.x + rx + drift, screenPos.y + offset), 
-                            2.5f, IM_COL32(255, 255, 255, 220)
-                        );
-                    }
-                }
-            }
-            
             viewportBuffer.unbind();
+            viewportBuffer.resolve();
         }
 
         // Chat UI
@@ -1316,7 +1571,7 @@ int main() {
         renderer.swapBuffers();
     }
 
-    saveUIConfig(showProfiler, showMemory, showECS, showWorldEditor, showSettings, showSoundEditor, showBlockDesigner, showMobDesigner, showInteractionEditor, fullscreen);
+    saveUIConfig(showProfiler, showMemory, showECS, showWorldEditor, showSettings, showSoundEditor, showBlockDesigner, showMobDesigner, showInteractionEditor, showToolDesigner, showSoundDesigner, showAdvWorldEditor, fullscreen);
 
     gui.shutdown();
     renderer.shutdown();
