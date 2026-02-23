@@ -35,7 +35,8 @@ enum BlockType : uint8_t {
     BLOCK_OAK_PLANKS = 25,
     BLOCK_BRICKS = 26,
     BLOCK_ICE = 27,
-    BLOCK_FIRE = 28
+    BLOCK_FIRE = 28,
+    BLOCK_SNOW_LAYER = 29
 };
 
 enum BiomeType : uint8_t {

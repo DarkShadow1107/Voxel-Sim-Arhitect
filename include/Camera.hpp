@@ -20,6 +20,7 @@ public:
 
     float yawDegrees() const { return m_yawDeg; }
     float pitchDegrees() const { return m_pitchDeg; }
+    void setYawPitch(float yaw, float pitch) { m_yawDeg = yaw; m_pitchDeg = pitch; }
 
     float fovDegrees() const { return m_fovDeg; }
     void setFovDegrees(float fov) { m_fovDeg = fov; }

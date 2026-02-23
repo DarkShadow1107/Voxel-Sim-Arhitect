@@ -10,6 +10,7 @@
 #include <glad/gl.h>
 #include <GLFW/glfw3.h>
 #include "imgui.h"
+#include "ImGuizmo.h"
 
 #include <algorithm>
 #include <string>
@@ -635,6 +636,42 @@ void MobDesigner::show(bool* open, unsigned int atlasID, Framebuffer* previewBuf
         // Display preview with ImGui::Image (proper widget)
         ImGui::Image((ImTextureID)(uintptr_t)getPreviewTexture(previewBuffer),
                      previewSize, ImVec2(0, 1), ImVec2(1, 0));
+
+        // ImGuizmo for Mob Parts
+        if (selectedPartIdx >= 0 && selectedPartIdx < (int)def.parts.size()) {
+            ImGuizmo::SetOrthographic(false);
+            ImGuizmo::SetDrawlist();
+            ImVec2 imgPos = ImGui::GetItemRectMin();
+            ImGuizmo::SetRect(imgPos.x, imgPos.y, previewSize.x, previewSize.y);
+
+            float cx = 0.0f, cy = 1.0f, cz = 0.0f;
+            float camX = cx + m_dist * cosf(m_pitch) * sinf(m_yaw);
+            float camY = cy + m_dist * sinf(m_pitch);
+            float camZ = cz + m_dist * cosf(m_pitch) * cosf(m_yaw);
+            Vec3 fwd = normalize(Vec3{cx - camX, cy - camY, cz - camZ});
+            Vec3 right = normalize(cross(fwd, {0, 1, 0}));
+            Vec3 up = cross(right, fwd);
+            camX += right.x * m_panX + up.x * m_panY;
+            camY += right.y * m_panX + up.y * m_panY;
+            camZ += right.z * m_panX + up.z * m_panY;
+            cx   += right.x * m_panX + up.x * m_panY;
+            cy   += right.y * m_panX + up.y * m_panY;
+            cz   += right.z * m_panX + up.z * m_panY;
+
+            Mat4 view = lookAt({camX, camY, camZ}, {cx, cy, cz}, {0, 1, 0});
+            float aspect = previewSize.x / previewSize.y;
+            Mat4 proj = perspective(40.0f * (3.14159f / 180.0f), aspect, 0.1f, 30.0f);
+
+            auto& part = def.parts[selectedPartIdx];
+            Mat4 partMatrix = translate(part.offset);
+            
+            if (ImGuizmo::Manipulate(view.m, proj.m, ImGuizmo::TRANSLATE, ImGuizmo::WORLD, partMatrix.m)) {
+                part.offset.x = partMatrix.m[12];
+                part.offset.y = partMatrix.m[13];
+                part.offset.z = partMatrix.m[14];
+                m_dirty = true;
+            }
+        }
 
         // Interaction: hover detection on the Image item
         static bool s_mobOrbit = false;

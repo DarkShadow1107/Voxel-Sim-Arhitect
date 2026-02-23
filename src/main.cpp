@@ -30,6 +30,7 @@
 
 #include "imgui.h"
 #include "imgui_internal.h"
+#include "ImGuizmo.h"
 
 #include <glad/gl.h>
 #define GLFW_INCLUDE_NONE
@@ -461,6 +462,7 @@ int main() {
 
         // GUI Frame
         gui.beginFrame();
+        ImGuizmo::BeginFrame();
 
         // Editor-style dockspace (production-feel).
         ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport());
@@ -552,6 +554,46 @@ int main() {
                 ImGui::Text("Pos: %.1f, %.1f, %.1f", camera.position().x, camera.position().y, camera.position().z);
                 ImGui::Text("Chunks: %zu", world.getChunkCount());
                 ImGui::EndGroup();
+
+                // ImGuizmo View Manipulator (Production-grade viewport compass)
+                ImGuizmo::SetOrthographic(false);
+                ImGuizmo::SetDrawlist();
+                ImGuizmo::SetRect(screenPos.x, screenPos.y, viewportSize.x, viewportSize.y);
+
+                Mat4 view = camera.viewMatrix();
+                Mat4 originalView = view;
+                
+                // Orbit distance for the view manipulator
+                float camDistance = 10.0f;
+                
+                // Draw the view manipulator in the top right corner
+                ImGuizmo::ViewManipulate(view.m, camDistance, ImVec2(screenPos.x + viewportSize.x - 128, screenPos.y), ImVec2(128, 128), 0x10101010);
+
+                // If the view matrix was modified by the manipulator, update the camera
+                bool viewChanged = false;
+                for (int i = 0; i < 16; ++i) {
+                    if (std::abs(view.m[i] - originalView.m[i]) > 0.0001f) {
+                        viewChanged = true;
+                        break;
+                    }
+                }
+
+                if (viewChanged) {
+                    // Extract forward vector from view matrix
+                    Vec3 f = {-view.m[2], -view.m[6], -view.m[10]};
+                    
+                    // Extract position from view matrix
+                    float px = -(view.m[0] * view.m[12] + view.m[1] * view.m[13] + view.m[2] * view.m[14]);
+                    float py = -(view.m[4] * view.m[12] + view.m[5] * view.m[13] + view.m[6] * view.m[14]);
+                    float pz = -(view.m[8] * view.m[12] + view.m[9] * view.m[13] + view.m[10] * view.m[14]);
+                    
+                    // Calculate yaw and pitch
+                    float yaw = std::atan2(f.z, f.x) * 180.0f / 3.14159265359f;
+                    float pitch = std::asin(f.y) * 180.0f / 3.14159265359f;
+                    
+                    camera.setPosition({px, py, pz});
+                    camera.setYawPitch(yaw, pitch);
+                }
 
                 // Draw Advancements
                 float advY = screenPos.y + 20.0f;

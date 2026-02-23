@@ -173,6 +173,8 @@ void MobAI::update(Mob& mob, Transform& transform, World& world, double dt, Vec3
     if (mob.state != Mob::FLEE) {
         if (distToPlayer < 5.0f && (mob.type == MOB_DOG || mob.type == MOB_CAT)) {
             mob.state = Mob::FOLLOW;
+        } else if (distToPlayer < 10.0f && (mob.type == MOB_ZOMBIE || mob.type == MOB_SKELETON || mob.type == MOB_CREEPER)) {
+            mob.state = Mob::FOLLOW; // Hostile mobs follow to attack
         } else if (distToPlayer < 3.0f && !isAquatic(mob.type) && mob.type != MOB_BIRD) {
             // Skittish animals flee
             if (mob.type == MOB_RABBIT || mob.type == MOB_CHICKEN || mob.type == MOB_BIRD) {
@@ -189,9 +191,9 @@ void MobAI::update(Mob& mob, Transform& transform, World& world, double dt, Vec3
             handleWander(mob, dt);
             break;
         case Mob::FOLLOW:
-            if (distToPlayer > 10.0f) {
+            if (distToPlayer > 15.0f) {
                 mob.state = Mob::WANDER;
-            } else if (distToPlayer > 2.0f) {
+            } else if (distToPlayer > 1.5f) {
                 mob.isMoving = true;
                 Vec3 dir = normalize(viewerPos - transform.position);
                 float targetYaw = std::atan2(dir.x, dir.z) * 57.2957795f;
@@ -201,6 +203,7 @@ void MobAI::update(Mob& mob, Transform& transform, World& world, double dt, Vec3
                 mob.yawDeg += yawDelta * std::min(1.0f, (float)dt * 5.0f);
             } else {
                 mob.isMoving = false;
+                // Attack logic could go here
             }
             break;
         case Mob::FLEE:
@@ -332,6 +335,12 @@ void MobAI::handleMovement(Mob& mob, Transform& transform, World& world, double 
             Vec3 jumpCheckPos = transform.position + forward * 0.7f;
             if (world.isSolid((int)std::floor(jumpCheckPos.x), (int)std::floor(jumpCheckPos.y), (int)std::floor(jumpCheckPos.z))) {
                 mob.velocity.y = 5.5f;
+            } else if (world.isSolid((int)std::floor(jumpCheckPos.x), (int)std::floor(jumpCheckPos.y - 1.0f), (int)std::floor(jumpCheckPos.z)) == false) {
+                // Avoid falling off cliffs
+                if (mob.state != Mob::FLEE && mob.state != Mob::FOLLOW) {
+                    mob.wanderYawDeg += 180.0f;
+                    mob.isMoving = false;
+                }
             }
         }
     }
@@ -365,6 +374,9 @@ Vec3 MobAI::getHalfExtents(MobType type) {
         case MOB_SALMON: return {0.4f, 0.2f, 0.2f};
         case MOB_OCTOPUS: return {0.4f, 0.4f, 0.4f};
         case MOB_BIRD: return {0.2f, 0.2f, 0.2f};
+        case MOB_ZOMBIE:
+        case MOB_SKELETON:
+        case MOB_CREEPER: return {0.3f, 0.9f, 0.3f};
         default: return {0.45f, 0.65f, 0.45f};
     }
 }
@@ -409,17 +421,17 @@ void MobAI::spawnMobsInChunk(Registry& registry, Chunk* chunk, int chunkX, int c
     // Determine Mob Type based on Biome
     std::vector<MobType> possibleMobs;
     if (biome == BIOME_POLAR || biome == BIOME_SNOWY) {
-        possibleMobs = {MOB_SHEEP, MOB_BIRD, MOB_CHICKEN, MOB_RABBIT};
+        possibleMobs = {MOB_SHEEP, MOB_BIRD, MOB_RABBIT, MOB_SKELETON};
     } else if (biome == BIOME_JUNGLE) {
-        possibleMobs = {MOB_CAT, MOB_CHICKEN, MOB_BIRD, MOB_PIG};
+        possibleMobs = {MOB_CAT, MOB_CHICKEN, MOB_BIRD, MOB_PIG, MOB_ZOMBIE, MOB_CREEPER};
     } else if (biome == BIOME_OCEAN) {
         possibleMobs = {MOB_SALMON, MOB_OCTOPUS};
     } else if (biome == BIOME_DESERT) {
-        possibleMobs = {MOB_COW, MOB_PIG, MOB_RABBIT};
+        possibleMobs = {MOB_RABBIT, MOB_SKELETON, MOB_CREEPER};
     } else if (biome == BIOME_SAVANNA) { // Plains/Savanna
-        possibleMobs = {MOB_COW, MOB_SHEEP, MOB_PIG, MOB_DOG, MOB_RABBIT};
+        possibleMobs = {MOB_COW, MOB_SHEEP, MOB_PIG, MOB_DOG, MOB_RABBIT, MOB_ZOMBIE};
     } else { // Plains / Default
-         possibleMobs = {MOB_COW, MOB_SHEEP, MOB_PIG, MOB_CHICKEN, MOB_DOG, MOB_RABBIT};
+         possibleMobs = {MOB_COW, MOB_SHEEP, MOB_PIG, MOB_CHICKEN, MOB_DOG, MOB_RABBIT, MOB_ZOMBIE, MOB_SKELETON, MOB_CREEPER};
     }
 
     if (possibleMobs.empty() && biome != BIOME_OCEAN) possibleMobs = {MOB_BIRD};

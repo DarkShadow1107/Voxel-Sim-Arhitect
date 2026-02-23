@@ -17,6 +17,9 @@ enum MobType {
     MOB_CAT,
     MOB_DOG,
     MOB_RABBIT,
+    MOB_ZOMBIE,
+    MOB_SKELETON,
+    MOB_CREEPER,
     MOB_COUNT
 };
 

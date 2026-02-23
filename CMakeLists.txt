@@ -44,11 +44,20 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(imgui)
 
+# ImGuizmo
+FetchContent_Declare(
+    imguizmo
+    GIT_REPOSITORY https://github.com/CedricGuillemet/ImGuizmo.git
+    GIT_TAG master
+)
+FetchContent_MakeAvailable(imguizmo)
+
 # Include directories
 include_directories(include)
 include_directories(external)
 include_directories(${fastnoise_SOURCE_DIR}/Cpp)
 include_directories(${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends)
+include_directories(${imguizmo_SOURCE_DIR})
 
 # Source files
 set(SOURCES
@@ -88,6 +97,7 @@ set(SOURCES
     ${imgui_SOURCE_DIR}/imgui_widgets.cpp
     ${imgui_SOURCE_DIR}/backends/imgui_impl_glfw.cpp
     ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp
+    ${imguizmo_SOURCE_DIR}/ImGuizmo.cpp
 )
 
 add_executable(${PROJECT_NAME} ${SOURCES})

@@ -40,6 +40,233 @@ void GameRegistry::init() {
     registerDefBlock(26, "Bricks", {0.80f, 0.60f, 0.50f}, 11, 1);
     registerDefBlock(27, "Ice", {0.85f, 0.92f, 1.00f}, 12, 1, true);
     registerDefBlock(28, "Fire", {1.00f, 0.60f, 0.15f}, 5, 0, true);
+    registerDefBlock(29, "Snow Layer", {1.00f, 1.00f, 1.00f}, 9, 0, true);
+    registerDefBlock(30, "Gravel", {0.90f, 0.85f, 0.70f}, 14, 1);
+    registerDefBlock(31, "Clay", {0.65f, 0.65f, 0.70f}, 15, 1);
+    registerDefBlock(32, "Sponge", {0.75f, 0.75f, 0.85f}, 0, 2);
+    registerDefBlock(33, "Glass Pane", {1.00f, 1.00f, 1.00f}, 1, 2, true);
+    registerDefBlock(34, "Lapis Lazuli Ore", {0.20f, 0.40f, 0.80f}, 2, 2);
+    registerDefBlock(35, "Lapis Lazuli Block", {0.15f, 0.35f, 0.75f}, 3, 2);
+    registerDefBlock(36, "Dispenser", {0.80f, 0.80f, 0.40f}, 4, 2);
+    registerDefBlock(37, "Sandstone", {0.90f, 0.85f, 0.70f}, 5, 2);
+    registerDefBlock(38, "Note Block", {0.40f, 0.30f, 0.20f}, 6, 2);
+    registerDefBlock(39, "Bed", {0.80f, 0.20f, 0.20f}, 7, 2);
+    registerDefBlock(40, "Powered Rail", {0.50f, 0.40f, 0.30f}, 8, 2);
+    registerDefBlock(41, "Detector Rail", {0.60f, 0.50f, 0.40f}, 9, 2);
+    registerDefBlock(42, "Sticky Piston", {0.50f, 0.50f, 0.50f}, 10, 2);
+    registerDefBlock(43, "Cobweb", {0.90f, 0.90f, 0.90f}, 11, 2, true);
+    registerDefBlock(44, "Piston", {0.50f, 0.50f, 0.50f}, 12, 2);
+    registerDefBlock(45, "Piston Head", {0.60f, 0.60f, 0.60f}, 13, 2);
+    registerDefBlock(46, "White Wool", {0.90f, 0.90f, 0.90f}, 14, 2);
+    registerDefBlock(47, "Orange Wool", {0.90f, 0.50f, 0.10f}, 15, 2);
+    registerDefBlock(48, "Magenta Wool", {0.80f, 0.30f, 0.80f}, 0, 3);
+    registerDefBlock(49, "Light Blue Wool", {0.40f, 0.60f, 0.90f}, 1, 3);
+    registerDefBlock(50, "Yellow Wool", {0.90f, 0.90f, 0.20f}, 2, 3);
+    registerDefBlock(51, "Lime Wool", {0.50f, 0.80f, 0.20f}, 3, 3);
+    registerDefBlock(52, "Pink Wool", {0.90f, 0.50f, 0.60f}, 4, 3);
+    registerDefBlock(53, "Gray Wool", {0.30f, 0.30f, 0.30f}, 5, 3);
+    registerDefBlock(54, "Light Gray Wool", {0.60f, 0.60f, 0.60f}, 6, 3);
+    registerDefBlock(55, "Cyan Wool", {0.30f, 0.60f, 0.60f}, 7, 3);
+    registerDefBlock(56, "Purple Wool", {0.50f, 0.20f, 0.70f}, 8, 3);
+    registerDefBlock(57, "Blue Wool", {0.20f, 0.30f, 0.70f}, 9, 3);
+    registerDefBlock(58, "Brown Wool", {0.40f, 0.20f, 0.10f}, 10, 3);
+    registerDefBlock(59, "Green Wool", {0.30f, 0.50f, 0.20f}, 11, 3);
+    registerDefBlock(60, "Red Wool", {0.70f, 0.20f, 0.20f}, 12, 3);
+    registerDefBlock(61, "Black Wool", {0.10f, 0.10f, 0.10f}, 13, 3);
+    registerDefBlock(62, "Gold Block", {0.95f, 0.90f, 0.40f}, 14, 3);
+    registerDefBlock(63, "Iron Block", {0.85f, 0.85f, 0.85f}, 15, 3);
+    registerDefBlock(64, "Double Stone Slab", {0.70f, 0.70f, 0.70f}, 0, 4);
+    registerDefBlock(65, "Stone Slab", {0.70f, 0.70f, 0.70f}, 1, 4);
+    registerDefBlock(66, "Bricks", {0.80f, 0.40f, 0.30f}, 2, 4);
+    registerDefBlock(67, "TNT", {0.80f, 0.20f, 0.20f}, 3, 4);
+    registerDefBlock(68, "Bookshelf", {0.60f, 0.40f, 0.20f}, 4, 4);
+    registerDefBlock(69, "Mossy Cobblestone", {0.50f, 0.60f, 0.50f}, 5, 4);
+    registerDefBlock(70, "Obsidian", {0.10f, 0.10f, 0.15f}, 6, 4);
+    registerDefBlock(71, "Torch", {0.90f, 0.80f, 0.40f}, 7, 4, true);
+    registerDefBlock(72, "Fire", {0.90f, 0.50f, 0.10f}, 8, 4, true);
+    registerDefBlock(73, "Monster Spawner", {0.20f, 0.20f, 0.30f}, 9, 4);
+    registerDefBlock(74, "Oak Stairs", {0.60f, 0.40f, 0.20f}, 10, 4);
+    registerDefBlock(75, "Chest", {0.60f, 0.40f, 0.20f}, 11, 4);
+    registerDefBlock(76, "Redstone Wire", {0.80f, 0.10f, 0.10f}, 12, 4, true);
+    registerDefBlock(77, "Diamond Ore", {0.40f, 0.80f, 0.80f}, 13, 4);
+    registerDefBlock(78, "Diamond Block", {0.30f, 0.90f, 0.90f}, 14, 4);
+    registerDefBlock(79, "Crafting Table", {0.60f, 0.40f, 0.20f}, 15, 4);
+    registerDefBlock(80, "Wheat Crops", {0.80f, 0.80f, 0.20f}, 0, 5, true);
+    registerDefBlock(81, "Farmland", {0.40f, 0.30f, 0.20f}, 1, 5);
+    registerDefBlock(82, "Furnace", {0.40f, 0.40f, 0.40f}, 2, 5);
+    registerDefBlock(83, "Burning Furnace", {0.50f, 0.40f, 0.40f}, 3, 5);
+    registerDefBlock(84, "Sign", {0.60f, 0.40f, 0.20f}, 4, 5, true);
+    registerDefBlock(85, "Oak Door", {0.60f, 0.40f, 0.20f}, 5, 5, true);
+    registerDefBlock(86, "Ladder", {0.60f, 0.40f, 0.20f}, 6, 5, true);
+    registerDefBlock(87, "Rail", {0.50f, 0.50f, 0.50f}, 7, 5, true);
+    registerDefBlock(88, "Cobblestone Stairs", {0.50f, 0.50f, 0.50f}, 8, 5);
+    registerDefBlock(89, "Wall Sign", {0.60f, 0.40f, 0.20f}, 9, 5, true);
+    registerDefBlock(90, "Lever", {0.50f, 0.50f, 0.50f}, 10, 5, true);
+    registerDefBlock(91, "Stone Pressure Plate", {0.50f, 0.50f, 0.50f}, 11, 5, true);
+    registerDefBlock(92, "Iron Door", {0.80f, 0.80f, 0.80f}, 12, 5, true);
+    registerDefBlock(93, "Oak Pressure Plate", {0.60f, 0.40f, 0.20f}, 13, 5, true);
+    registerDefBlock(94, "Redstone Ore", {0.80f, 0.20f, 0.20f}, 14, 5);
+    registerDefBlock(95, "Glowing Redstone Ore", {0.90f, 0.30f, 0.30f}, 15, 5);
+    registerDefBlock(96, "Redstone Torch", {0.80f, 0.20f, 0.20f}, 0, 6, true);
+    registerDefBlock(97, "Redstone Torch", {0.90f, 0.30f, 0.30f}, 1, 6, true);
+    registerDefBlock(98, "Stone Button", {0.50f, 0.50f, 0.50f}, 2, 6, true);
+    registerDefBlock(99, "Snow", {0.90f, 0.90f, 0.90f}, 3, 6, true);
+    registerDefBlock(100, "Ice", {0.60f, 0.80f, 0.90f}, 4, 6, true);
+    registerDefBlock(101, "Snow Block", {0.90f, 0.90f, 0.90f}, 5, 6);
+    registerDefBlock(102, "Cactus", {0.20f, 0.60f, 0.20f}, 6, 6);
+    registerDefBlock(103, "Clay", {0.60f, 0.60f, 0.70f}, 7, 6);
+    registerDefBlock(104, "Sugar Cane", {0.30f, 0.70f, 0.30f}, 8, 6);
+    registerDefBlock(105, "Jukebox", {0.50f, 0.30f, 0.20f}, 9, 6);
+    registerDefBlock(106, "Oak Fence", {0.60f, 0.40f, 0.20f}, 10, 6, true);
+    registerDefBlock(107, "Pumpkin", {0.80f, 0.40f, 0.10f}, 11, 6);
+    registerDefBlock(108, "Netherrack", {0.20f, 0.10f, 0.20f}, 12, 6);
+    registerDefBlock(109, "Soul Sand", {0.40f, 0.30f, 0.20f}, 13, 6);
+    registerDefBlock(110, "Glowstone", {0.80f, 0.60f, 0.20f}, 14, 6);
+    registerDefBlock(111, "Nether Portal", {0.40f, 0.20f, 0.80f}, 15, 6, true);
+    registerDefBlock(112, "Jack o'Lantern", {0.90f, 0.50f, 0.10f}, 0, 7);
+    registerDefBlock(113, "Cake", {0.90f, 0.80f, 0.70f}, 1, 7);
+    registerDefBlock(114, "Repeater", {0.60f, 0.60f, 0.60f}, 2, 7, true);
+    registerDefBlock(115, "Repeater", {0.70f, 0.70f, 0.70f}, 3, 7, true);
+    registerDefBlock(116, "White Stained Glass", {0.90f, 0.90f, 0.90f}, 4, 7, true);
+    registerDefBlock(117, "Orange Stained Glass", {0.90f, 0.50f, 0.10f}, 5, 7, true);
+    registerDefBlock(118, "Magenta Stained Glass", {0.80f, 0.30f, 0.80f}, 6, 7, true);
+    registerDefBlock(119, "Light Blue Stained Glass", {0.40f, 0.60f, 0.90f}, 7, 7, true);
+    registerDefBlock(120, "Yellow Stained Glass", {0.90f, 0.90f, 0.20f}, 8, 7, true);
+    registerDefBlock(121, "Lime Stained Glass", {0.50f, 0.80f, 0.20f}, 9, 7, true);
+    registerDefBlock(122, "Pink Stained Glass", {0.90f, 0.50f, 0.60f}, 10, 7, true);
+    registerDefBlock(123, "Gray Stained Glass", {0.30f, 0.30f, 0.30f}, 11, 7, true);
+    registerDefBlock(124, "Light Gray Stained Glass", {0.60f, 0.60f, 0.60f}, 12, 7, true);
+    registerDefBlock(125, "Cyan Stained Glass", {0.30f, 0.60f, 0.60f}, 13, 7, true);
+    registerDefBlock(126, "Purple Stained Glass", {0.50f, 0.20f, 0.70f}, 14, 7, true);
+    registerDefBlock(127, "Blue Stained Glass", {0.20f, 0.30f, 0.70f}, 15, 7, true);
+    registerDefBlock(128, "Brown Stained Glass", {0.40f, 0.20f, 0.10f}, 0, 8, true);
+    registerDefBlock(129, "Green Stained Glass", {0.30f, 0.50f, 0.20f}, 1, 8, true);
+    registerDefBlock(130, "Red Stained Glass", {0.70f, 0.20f, 0.20f}, 2, 8, true);
+    registerDefBlock(131, "Black Stained Glass", {0.10f, 0.10f, 0.10f}, 3, 8, true);
+    registerDefBlock(132, "Oak Trapdoor", {0.60f, 0.40f, 0.20f}, 4, 8, true);
+    registerDefBlock(133, "Stone Bricks", {0.60f, 0.60f, 0.60f}, 5, 8);
+    registerDefBlock(134, "Brown Mushroom", {0.60f, 0.40f, 0.20f}, 6, 8, true);
+    registerDefBlock(135, "Red Mushroom", {0.80f, 0.20f, 0.20f}, 7, 8, true);
+    registerDefBlock(136, "Iron Bars", {0.80f, 0.80f, 0.80f}, 8, 8, true);
+    registerDefBlock(137, "Glass Pane", {0.90f, 0.90f, 0.90f}, 9, 8, true);
+    registerDefBlock(138, "Melon", {0.60f, 0.80f, 0.20f}, 10, 8);
+    registerDefBlock(139, "Pumpkin Stem", {0.40f, 0.60f, 0.20f}, 11, 8, true);
+    registerDefBlock(140, "Melon Stem", {0.40f, 0.60f, 0.20f}, 12, 8, true);
+    registerDefBlock(141, "Vines", {0.30f, 0.60f, 0.30f}, 13, 8, true);
+    registerDefBlock(142, "Oak Fence Gate", {0.60f, 0.40f, 0.20f}, 14, 8, true);
+    registerDefBlock(143, "Brick Stairs", {0.80f, 0.40f, 0.30f}, 15, 8);
+    registerDefBlock(144, "Stone Brick Stairs", {0.60f, 0.60f, 0.60f}, 0, 9);
+    registerDefBlock(145, "Mycelium", {0.40f, 0.50f, 0.30f}, 1, 9);
+    registerDefBlock(146, "Lily Pad", {0.30f, 0.60f, 0.30f}, 2, 9, true);
+    registerDefBlock(147, "Nether Bricks", {0.30f, 0.20f, 0.30f}, 3, 9);
+    registerDefBlock(148, "Nether Brick Fence", {0.30f, 0.20f, 0.30f}, 4, 9, true);
+    registerDefBlock(149, "Nether Brick Stairs", {0.30f, 0.20f, 0.30f}, 5, 9);
+    registerDefBlock(150, "Nether Wart", {0.60f, 0.20f, 0.20f}, 6, 9, true);
+    registerDefBlock(151, "Enchanting Table", {0.20f, 0.10f, 0.20f}, 7, 9);
+    registerDefBlock(152, "Brewing Stand", {0.40f, 0.40f, 0.40f}, 8, 9);
+    registerDefBlock(153, "Cauldron", {0.30f, 0.30f, 0.30f}, 9, 9);
+    registerDefBlock(154, "End Portal", {0.40f, 0.20f, 0.80f}, 10, 9, true);
+    registerDefBlock(155, "End Portal Frame", {0.40f, 0.50f, 0.40f}, 11, 9);
+    registerDefBlock(156, "End Stone", {0.80f, 0.80f, 0.60f}, 12, 9);
+    registerDefBlock(157, "Dragon Egg", {0.10f, 0.10f, 0.10f}, 13, 9);
+    registerDefBlock(158, "Redstone Lamp", {0.40f, 0.20f, 0.10f}, 14, 9);
+    registerDefBlock(159, "Redstone Lamp", {0.90f, 0.70f, 0.20f}, 15, 9);
+    registerDefBlock(160, "Oak Wood Slab", {0.60f, 0.40f, 0.20f}, 0, 10);
+    registerDefBlock(161, "Spruce Wood Slab", {0.50f, 0.30f, 0.10f}, 1, 10);
+    registerDefBlock(162, "Birch Wood Slab", {0.80f, 0.70f, 0.50f}, 2, 10);
+    registerDefBlock(163, "Jungle Wood Slab", {0.40f, 0.20f, 0.10f}, 3, 10);
+    registerDefBlock(164, "Acacia Wood Slab", {0.70f, 0.40f, 0.20f}, 4, 10);
+    registerDefBlock(165, "Dark Oak Wood Slab", {0.30f, 0.20f, 0.10f}, 5, 10);
+    registerDefBlock(166, "Sandstone Stairs", {0.90f, 0.80f, 0.60f}, 6, 10);
+    registerDefBlock(167, "Emerald Ore", {0.20f, 0.80f, 0.60f}, 7, 10);
+    registerDefBlock(168, "Ender Chest", {0.20f, 0.30f, 0.40f}, 8, 10);
+    registerDefBlock(169, "Tripwire Hook", {0.50f, 0.50f, 0.50f}, 9, 10, true);
+    registerDefBlock(170, "Tripwire", {0.80f, 0.80f, 0.80f}, 10, 10, true);
+    registerDefBlock(171, "Emerald Block", {0.30f, 0.90f, 0.50f}, 11, 10);
+    registerDefBlock(172, "Spruce Stairs", {0.50f, 0.30f, 0.10f}, 12, 10);
+    registerDefBlock(173, "Birch Stairs", {0.80f, 0.70f, 0.50f}, 13, 10);
+    registerDefBlock(174, "Jungle Stairs", {0.40f, 0.20f, 0.10f}, 14, 10);
+    registerDefBlock(175, "Command Block", {0.60f, 0.40f, 0.20f}, 15, 10);
+    registerDefBlock(176, "Beacon", {0.60f, 0.80f, 0.90f}, 0, 11, true);
+    registerDefBlock(177, "Cobblestone Wall", {0.50f, 0.50f, 0.50f}, 1, 11, true);
+    registerDefBlock(178, "Mossy Cobblestone Wall", {0.40f, 0.50f, 0.40f}, 2, 11, true);
+    registerDefBlock(179, "Flower Pot", {0.60f, 0.30f, 0.20f}, 3, 11, true);
+    registerDefBlock(180, "Carrots", {0.80f, 0.50f, 0.10f}, 4, 11, true);
+    registerDefBlock(181, "Potatoes", {0.80f, 0.60f, 0.20f}, 5, 11, true);
+    registerDefBlock(182, "Wooden Button", {0.60f, 0.40f, 0.20f}, 6, 11, true);
+    registerDefBlock(183, "Skeleton Skull", {0.80f, 0.80f, 0.80f}, 7, 11, true);
+    registerDefBlock(184, "Wither Skeleton Skull", {0.20f, 0.20f, 0.20f}, 8, 11, true);
+    registerDefBlock(185, "Zombie Head", {0.40f, 0.60f, 0.40f}, 9, 11, true);
+    registerDefBlock(186, "Player Head", {0.80f, 0.60f, 0.40f}, 10, 11, true);
+    registerDefBlock(187, "Creeper Head", {0.20f, 0.80f, 0.20f}, 11, 11, true);
+    registerDefBlock(188, "Dragon Head", {0.10f, 0.10f, 0.10f}, 12, 11, true);
+    registerDefBlock(189, "Anvil", {0.20f, 0.20f, 0.20f}, 13, 11);
+    registerDefBlock(190, "Trapped Chest", {0.60f, 0.40f, 0.20f}, 14, 11);
+    registerDefBlock(191, "Light Weighted Pressure Plate", {0.90f, 0.80f, 0.40f}, 15, 11, true);
+    registerDefBlock(192, "Heavy Weighted Pressure Plate", {0.80f, 0.80f, 0.80f}, 0, 12, true);
+    registerDefBlock(193, "Comparator", {0.60f, 0.60f, 0.60f}, 1, 12, true);
+    registerDefBlock(194, "Comparator", {0.70f, 0.70f, 0.70f}, 2, 12, true);
+    registerDefBlock(195, "Daylight Detector", {0.60f, 0.50f, 0.40f}, 3, 12, true);
+    registerDefBlock(196, "Redstone Block", {0.80f, 0.20f, 0.20f}, 4, 12);
+    registerDefBlock(197, "Nether Quartz Ore", {0.60f, 0.20f, 0.20f}, 5, 12);
+    registerDefBlock(198, "Hopper", {0.40f, 0.40f, 0.40f}, 6, 12);
+    registerDefBlock(199, "Quartz Block", {0.90f, 0.90f, 0.90f}, 7, 12);
+    registerDefBlock(200, "Chiseled Quartz Block", {0.90f, 0.90f, 0.90f}, 8, 12);
+    registerDefBlock(201, "Quartz Pillar", {0.90f, 0.90f, 0.90f}, 9, 12);
+    registerDefBlock(202, "Quartz Stairs", {0.90f, 0.90f, 0.90f}, 10, 12);
+    registerDefBlock(203, "Activator Rail", {0.60f, 0.40f, 0.30f}, 11, 12, true);
+    registerDefBlock(204, "Dropper", {0.50f, 0.50f, 0.50f}, 12, 12);
+    registerDefBlock(205, "White Terracotta", {0.90f, 0.90f, 0.90f}, 13, 12);
+    registerDefBlock(206, "Orange Terracotta", {0.90f, 0.50f, 0.10f}, 14, 12);
+    registerDefBlock(207, "Magenta Terracotta", {0.80f, 0.30f, 0.80f}, 15, 12);
+    registerDefBlock(208, "Light Blue Terracotta", {0.40f, 0.60f, 0.90f}, 0, 13);
+    registerDefBlock(209, "Yellow Terracotta", {0.90f, 0.90f, 0.20f}, 1, 13);
+    registerDefBlock(210, "Lime Terracotta", {0.50f, 0.80f, 0.20f}, 2, 13);
+    registerDefBlock(211, "Pink Terracotta", {0.90f, 0.50f, 0.60f}, 3, 13);
+    registerDefBlock(212, "Gray Terracotta", {0.30f, 0.30f, 0.30f}, 4, 13);
+    registerDefBlock(213, "Light Gray Terracotta", {0.60f, 0.60f, 0.60f}, 5, 13);
+    registerDefBlock(214, "Cyan Terracotta", {0.30f, 0.60f, 0.60f}, 6, 13);
+    registerDefBlock(215, "Purple Terracotta", {0.50f, 0.20f, 0.70f}, 7, 13);
+    registerDefBlock(216, "Blue Terracotta", {0.20f, 0.30f, 0.70f}, 8, 13);
+    registerDefBlock(217, "Brown Terracotta", {0.40f, 0.20f, 0.10f}, 9, 13);
+    registerDefBlock(218, "Green Terracotta", {0.30f, 0.50f, 0.20f}, 10, 13);
+    registerDefBlock(219, "Red Terracotta", {0.70f, 0.20f, 0.20f}, 11, 13);
+    registerDefBlock(220, "Black Terracotta", {0.10f, 0.10f, 0.10f}, 12, 13);
+    registerDefBlock(221, "White Stained Glass Pane", {0.90f, 0.90f, 0.90f}, 13, 13, true);
+    registerDefBlock(222, "Orange Stained Glass Pane", {0.90f, 0.50f, 0.10f}, 14, 13, true);
+    registerDefBlock(223, "Magenta Stained Glass Pane", {0.80f, 0.30f, 0.80f}, 15, 13, true);
+    registerDefBlock(224, "Light Blue Stained Glass Pane", {0.40f, 0.60f, 0.90f}, 0, 14, true);
+    registerDefBlock(225, "Yellow Stained Glass Pane", {0.90f, 0.90f, 0.20f}, 1, 14, true);
+    registerDefBlock(226, "Lime Stained Glass Pane", {0.50f, 0.80f, 0.20f}, 2, 14, true);
+    registerDefBlock(227, "Pink Stained Glass Pane", {0.90f, 0.50f, 0.60f}, 3, 14, true);
+    registerDefBlock(228, "Gray Stained Glass Pane", {0.30f, 0.30f, 0.30f}, 4, 14, true);
+    registerDefBlock(229, "Light Gray Stained Glass Pane", {0.60f, 0.60f, 0.60f}, 5, 14, true);
+    registerDefBlock(230, "Cyan Stained Glass Pane", {0.30f, 0.60f, 0.60f}, 6, 14, true);
+    registerDefBlock(231, "Purple Stained Glass Pane", {0.50f, 0.20f, 0.70f}, 7, 14, true);
+    registerDefBlock(232, "Blue Stained Glass Pane", {0.20f, 0.30f, 0.70f}, 8, 14, true);
+    registerDefBlock(233, "Brown Stained Glass Pane", {0.40f, 0.20f, 0.10f}, 9, 14, true);
+    registerDefBlock(234, "Green Stained Glass Pane", {0.30f, 0.50f, 0.20f}, 10, 14, true);
+    registerDefBlock(235, "Red Stained Glass Pane", {0.70f, 0.20f, 0.20f}, 11, 14, true);
+    registerDefBlock(236, "Black Stained Glass Pane", {0.10f, 0.10f, 0.10f}, 12, 14, true);
+    registerDefBlock(237, "Acacia Leaves", {0.40f, 0.70f, 0.30f}, 13, 14, true);
+    registerDefBlock(238, "Dark Oak Leaves", {0.20f, 0.50f, 0.20f}, 14, 14, true);
+    registerDefBlock(239, "Slime Block", {0.50f, 0.80f, 0.50f}, 15, 14);
+    registerDefBlock(240, "Barrier", {0.00f, 0.00f, 0.00f}, 0, 15, true);
+    registerDefBlock(241, "Iron Trapdoor", {0.80f, 0.80f, 0.80f}, 1, 15, true);
+    registerDefBlock(242, "Prismarine", {0.40f, 0.70f, 0.60f}, 2, 15);
+    registerDefBlock(243, "Prismarine Bricks", {0.30f, 0.60f, 0.50f}, 3, 15);
+    registerDefBlock(244, "Dark Prismarine", {0.20f, 0.40f, 0.30f}, 4, 15);
+    registerDefBlock(245, "Prismarine Stairs", {0.40f, 0.70f, 0.60f}, 5, 15);
+    registerDefBlock(246, "Prismarine Brick Stairs", {0.30f, 0.60f, 0.50f}, 6, 15);
+    registerDefBlock(247, "Dark Prismarine Stairs", {0.20f, 0.40f, 0.30f}, 7, 15);
+    registerDefBlock(248, "Sea Lantern", {0.80f, 0.90f, 0.80f}, 8, 15);
+    registerDefBlock(249, "Hay Block", {0.80f, 0.70f, 0.20f}, 9, 15);
+    registerDefBlock(250, "White Carpet", {0.90f, 0.90f, 0.90f}, 10, 15, true);
+    registerDefBlock(251, "Orange Carpet", {0.90f, 0.50f, 0.10f}, 11, 15, true);
+    registerDefBlock(252, "Magenta Carpet", {0.80f, 0.30f, 0.80f}, 12, 15, true);
+    registerDefBlock(253, "Light Blue Carpet", {0.40f, 0.60f, 0.90f}, 13, 15, true);
+    registerDefBlock(254, "Yellow Carpet", {0.90f, 0.90f, 0.20f}, 14, 15, true);
+    registerDefBlock(255, "Lime Carpet", {0.50f, 0.80f, 0.20f}, 15, 15, true);
 
     // Grass: per-face textures (top=grass, sides=grass side, bottom=dirt)
     {
@@ -94,6 +321,88 @@ void GameRegistry::init() {
 
     // ========== PIG ==========
     // Minecraft pig: body 10w×8h×16d px, head 8×8×8, legs 4×6×4
+    // Body bottom at Y=0.375 (6px).
+    {
+        MobDefinition m;
+        m.type = MOB_PIG; m.name = "Pig"; m.maxHp = 10; m.speed = 2.0f;
+        m.parts.push_back({"Body",    {-0.3125f, 0.375f, -0.5f}, {0.625f, 0.5f, 1.0f}, {0,0,0}, {0.95f, 0.65f, 0.70f}});
+        m.parts.push_back({"Head",    {-0.25f, 0.5f, 0.5f}, {0.5f, 0.5f, 0.5f}, {0, -0.125f, -0.25f}, {0.95f, 0.65f, 0.70f}, false, true});
+        m.parts.push_back({"Snout",   {-0.125f, 0.5625f, 1.0f}, {0.25f, 0.1875f, 0.0625f}, {0,0,0}, {0.85f, 0.55f, 0.60f}});
+        m.parts.push_back({"Leg FL",  {-0.3125f, 0.0f, 0.25f}, {0.25f, 0.375f, 0.25f}, {0.125f, 0.375f, 0.125f}, {0.95f, 0.65f, 0.70f}, true});
+        m.parts.push_back({"Leg FR",  { 0.0625f, 0.0f, 0.25f}, {0.25f, 0.375f, 0.25f}, {0.125f, 0.375f, 0.125f}, {0.95f, 0.65f, 0.70f}, true});
+        m.parts.push_back({"Leg BL",  {-0.3125f, 0.0f, -0.5f}, {0.25f, 0.375f, 0.25f}, {0.125f, 0.375f, 0.125f}, {0.95f, 0.65f, 0.70f}, true});
+        m.parts.push_back({"Leg BR",  { 0.0625f, 0.0f, -0.5f}, {0.25f, 0.375f, 0.25f}, {0.125f, 0.375f, 0.125f}, {0.95f, 0.65f, 0.70f}, true});
+        registerMob(m);
+    }
+
+    // ========== SHEEP ==========
+    {
+        MobDefinition m;
+        m.type = MOB_SHEEP; m.name = "Sheep"; m.maxHp = 8; m.speed = 2.0f;
+        m.parts.push_back({"Body",    {-0.3125f, 0.5f, -0.5f}, {0.625f, 0.5f, 1.0f}, {0,0,0}, {0.9f, 0.9f, 0.9f}});
+        m.parts.push_back({"Head",    {-0.25f, 0.625f, 0.5f}, {0.5f, 0.5f, 0.5f}, {0, -0.125f, -0.25f}, {0.8f, 0.7f, 0.6f}, false, true});
+        m.parts.push_back({"Leg FL",  {-0.3125f, 0.0f, 0.25f}, {0.25f, 0.5f, 0.25f}, {0.125f, 0.5f, 0.125f}, {0.8f, 0.7f, 0.6f}, true});
+        m.parts.push_back({"Leg FR",  { 0.0625f, 0.0f, 0.25f}, {0.25f, 0.5f, 0.25f}, {0.125f, 0.5f, 0.125f}, {0.8f, 0.7f, 0.6f}, true});
+        m.parts.push_back({"Leg BL",  {-0.3125f, 0.0f, -0.5f}, {0.25f, 0.5f, 0.25f}, {0.125f, 0.5f, 0.125f}, {0.8f, 0.7f, 0.6f}, true});
+        m.parts.push_back({"Leg BR",  { 0.0625f, 0.0f, -0.5f}, {0.25f, 0.5f, 0.25f}, {0.125f, 0.5f, 0.125f}, {0.8f, 0.7f, 0.6f}, true});
+        registerMob(m);
+    }
+
+    // ========== CHICKEN ==========
+    {
+        MobDefinition m;
+        m.type = MOB_CHICKEN; m.name = "Chicken"; m.maxHp = 4; m.speed = 2.5f;
+        m.parts.push_back({"Body",    {-0.1875f, 0.25f, -0.25f}, {0.375f, 0.375f, 0.5f}, {0,0,0}, {0.95f, 0.95f, 0.95f}});
+        m.parts.push_back({"Head",    {-0.125f, 0.5625f, 0.125f}, {0.25f, 0.375f, 0.1875f}, {0, -0.1875f, -0.09375f}, {0.95f, 0.95f, 0.95f}, false, true});
+        m.parts.push_back({"Beak",    {-0.0625f, 0.6875f, 0.3125f}, {0.125f, 0.125f, 0.125f}, {0,0,0}, {0.9f, 0.8f, 0.2f}});
+        m.parts.push_back({"Wattle",  {-0.0625f, 0.5625f, 0.3125f}, {0.125f, 0.125f, 0.125f}, {0,0,0}, {0.8f, 0.2f, 0.2f}});
+        m.parts.push_back({"Wing L",  {-0.25f, 0.3125f, -0.1875f}, {0.0625f, 0.25f, 0.375f}, {0, 0.125f, 0.1875f}, {0.95f, 0.95f, 0.95f}});
+        m.parts.push_back({"Wing R",  { 0.1875f, 0.3125f, -0.1875f}, {0.0625f, 0.25f, 0.375f}, {0, 0.125f, 0.1875f}, {0.95f, 0.95f, 0.95f}});
+        m.parts.push_back({"Leg L",   {-0.125f, 0.0f, -0.0625f}, {0.0625f, 0.3125f, 0.0625f}, {0.03125f, 0.3125f, 0.03125f}, {0.9f, 0.8f, 0.2f}, true});
+        m.parts.push_back({"Leg R",   { 0.0625f, 0.0f, -0.0625f}, {0.0625f, 0.3125f, 0.0625f}, {0.03125f, 0.3125f, 0.03125f}, {0.9f, 0.8f, 0.2f}, true});
+        registerMob(m);
+    }
+
+    // ========== ZOMBIE ==========
+    {
+        MobDefinition m;
+        m.type = MOB_ZOMBIE; m.name = "Zombie"; m.maxHp = 20; m.speed = 1.5f;
+        m.parts.push_back({"Body",    {-0.25f, 0.75f, -0.125f}, {0.5f, 0.75f, 0.25f}, {0,0,0}, {0.2f, 0.4f, 0.6f}});
+        m.parts.push_back({"Head",    {-0.25f, 1.5f, -0.25f}, {0.5f, 0.5f, 0.5f}, {0, -0.25f, 0}, {0.3f, 0.5f, 0.3f}, false, true});
+        m.parts.push_back({"Arm L",   {-0.5f, 0.75f, -0.125f}, {0.25f, 0.75f, 0.25f}, {0.125f, 0.625f, 0.125f}, {0.2f, 0.4f, 0.6f}, true});
+        m.parts.push_back({"Arm R",   { 0.25f, 0.75f, -0.125f}, {0.25f, 0.75f, 0.25f}, {0.125f, 0.625f, 0.125f}, {0.2f, 0.4f, 0.6f}, true});
+        m.parts.push_back({"Leg L",   {-0.25f, 0.0f, -0.125f}, {0.25f, 0.75f, 0.25f}, {0.125f, 0.75f, 0.125f}, {0.3f, 0.3f, 0.6f}, true});
+        m.parts.push_back({"Leg R",   { 0.0f, 0.0f, -0.125f}, {0.25f, 0.75f, 0.25f}, {0.125f, 0.75f, 0.125f}, {0.3f, 0.3f, 0.6f}, true});
+        registerMob(m);
+    }
+
+    // ========== SKELETON ==========
+    {
+        MobDefinition m;
+        m.type = MOB_SKELETON; m.name = "Skeleton"; m.maxHp = 20; m.speed = 1.5f;
+        m.parts.push_back({"Body",    {-0.25f, 0.75f, -0.125f}, {0.5f, 0.75f, 0.25f}, {0,0,0}, {0.8f, 0.8f, 0.8f}});
+        m.parts.push_back({"Head",    {-0.25f, 1.5f, -0.25f}, {0.5f, 0.5f, 0.5f}, {0, -0.25f, 0}, {0.8f, 0.8f, 0.8f}, false, true});
+        m.parts.push_back({"Arm L",   {-0.375f, 0.75f, -0.0625f}, {0.125f, 0.75f, 0.125f}, {0.0625f, 0.625f, 0.0625f}, {0.8f, 0.8f, 0.8f}, true});
+        m.parts.push_back({"Arm R",   { 0.25f, 0.75f, -0.0625f}, {0.125f, 0.75f, 0.125f}, {0.0625f, 0.625f, 0.0625f}, {0.8f, 0.8f, 0.8f}, true});
+        m.parts.push_back({"Leg L",   {-0.1875f, 0.0f, -0.0625f}, {0.125f, 0.75f, 0.125f}, {0.0625f, 0.75f, 0.0625f}, {0.8f, 0.8f, 0.8f}, true});
+        m.parts.push_back({"Leg R",   { 0.0625f, 0.0f, -0.0625f}, {0.125f, 0.75f, 0.125f}, {0.0625f, 0.75f, 0.0625f}, {0.8f, 0.8f, 0.8f}, true});
+        registerMob(m);
+    }
+
+    // ========== CREEPER ==========
+    {
+        MobDefinition m;
+        m.type = MOB_CREEPER; m.name = "Creeper"; m.maxHp = 20; m.speed = 1.5f;
+        m.parts.push_back({"Body",    {-0.25f, 0.375f, -0.125f}, {0.5f, 0.75f, 0.25f}, {0,0,0}, {0.2f, 0.8f, 0.2f}});
+        m.parts.push_back({"Head",    {-0.25f, 1.125f, -0.25f}, {0.5f, 0.5f, 0.5f}, {0, -0.25f, 0}, {0.2f, 0.8f, 0.2f}, false, true});
+        m.parts.push_back({"Leg FL",  {-0.25f, 0.0f, 0.125f}, {0.25f, 0.375f, 0.25f}, {0.125f, 0.375f, 0.125f}, {0.2f, 0.8f, 0.2f}, true});
+        m.parts.push_back({"Leg FR",  { 0.0f, 0.0f, 0.125f}, {0.25f, 0.375f, 0.25f}, {0.125f, 0.375f, 0.125f}, {0.2f, 0.8f, 0.2f}, true});
+        m.parts.push_back({"Leg BL",  {-0.25f, 0.0f, -0.375f}, {0.25f, 0.375f, 0.25f}, {0.125f, 0.375f, 0.125f}, {0.2f, 0.8f, 0.2f}, true});
+        m.parts.push_back({"Leg BR",  { 0.0f, 0.0f, -0.375f}, {0.25f, 0.375f, 0.25f}, {0.125f, 0.375f, 0.125f}, {0.2f, 0.8f, 0.2f}, true});
+        registerMob(m);
+    }
+    // ========== PIG ==========
+    // Minecraft pig: body 10w×8h×16d px, head 8×8×8, snout 4×3×1, legs 4×6×4
     // Body bottom at Y=0.375 (6px).
     {
         MobDefinition m;

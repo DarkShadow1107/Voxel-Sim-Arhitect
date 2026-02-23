@@ -365,11 +365,40 @@ bool IntroScreen::update(float dt) {
 
     // Check for skip input (any key or mouse click)
     ImGuiIO& io = ImGui::GetIO();
+    bool inputPressed = false;
     if (m_totalTime > 0.3f) { // small grace period
         for (int key = ImGuiKey_NamedKey_BEGIN; key < ImGuiKey_NamedKey_END; key++) {
-            if (ImGui::IsKeyPressed((ImGuiKey)key, false)) { skip(); return true; }
+            if (ImGui::IsKeyPressed((ImGuiKey)key, false)) { inputPressed = true; break; }
         }
-        if (io.MouseClicked[0] || io.MouseClicked[1]) { skip(); return true; }
+        if (io.MouseClicked[0] || io.MouseClicked[1]) { inputPressed = true; }
+    }
+
+    if (inputPressed) {
+        if (m_phase == FADE_IN || m_phase == LOGO_ASSEMBLE || m_phase == TITLE_IN) {
+            // Skip to holding
+            m_phase = HOLDING;
+            m_elapsed = 0.0f;
+            for (auto& c : m_cubes) {
+                c.currentX = c.targetX;
+                c.currentY = c.targetY;
+                c.alpha = 1.0f;
+                c.scale = 1.0f;
+                c.rotation = 0.0f;
+            }
+            for (auto& v : m_logoVoxels) {
+                v.currentX = v.targetX;
+                v.currentY = v.targetY;
+                v.alpha = 1.0f;
+            }
+        } else if (m_phase == HOLDING) {
+            // Start dissolving
+            m_phase = DISSOLVING;
+            m_elapsed = 0.0f;
+        } else if (m_phase == DISSOLVING) {
+            // Skip dissolve
+            skip();
+            return true;
+        }
     }
 
     float screenW = io.DisplaySize.x;
@@ -525,10 +554,7 @@ bool IntroScreen::update(float dt) {
     }
 
     case HOLDING:
-        if (m_elapsed >= kHoldTime) {
-            m_phase = DISSOLVING;
-            m_elapsed = 0.0f;
-        }
+        // Wait for user input (handled above)
         break;
 
     case DISSOLVING: {

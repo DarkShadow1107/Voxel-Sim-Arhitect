@@ -37,13 +37,15 @@ static void addVoxelFace(std::vector<Vertex>& out, const Chunk& chunk, int x, in
     }
 
 
-    static const float corners[6][4][3] = {
-        { {1,0,0},{1,1,0},{1,1,1},{1,0,1} }, // +X
-        { {0,0,1},{0,1,1},{0,1,0},{0,0,0} }, // -X
-        { {0,1,1},{1,1,1},{1,1,0},{0,1,0} }, // +Y
+    float maxY = (type == BLOCK_SNOW_LAYER) ? 0.125f : 1.0f;
+
+    const float corners[6][4][3] = {
+        { {1,0,0},{1,maxY,0},{1,maxY,1},{1,0,1} }, // +X
+        { {0,0,1},{0,maxY,1},{0,maxY,0},{0,0,0} }, // -X
+        { {0,maxY,1},{1,maxY,1},{1,maxY,0},{0,maxY,0} }, // +Y
         { {0,0,0},{1,0,0},{1,0,1},{0,0,1} }, // -Y
-        { {1,0,1},{1,1,1},{0,1,1},{0,0,1} }, // +Z
-        { {0,0,0},{0,1,0},{1,1,0},{1,0,0} }, // -Z
+        { {1,0,1},{1,maxY,1},{0,maxY,1},{0,0,1} }, // +Z
+        { {0,0,0},{0,maxY,0},{1,maxY,0},{1,0,0} }, // -Z
     };
 
     const float nx = normals[face][0];
@@ -124,6 +126,7 @@ static bool isTransparent(uint8_t type) {
         case BLOCK_FLOWER_BLUE:
         case BLOCK_TALL_GRASS:
         case BLOCK_FIRE:
+        case BLOCK_SNOW_LAYER:
             return true;
         default:
             return false;

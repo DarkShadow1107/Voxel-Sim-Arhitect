@@ -151,7 +151,7 @@ void Chunk::generateTerrain(FastNoiseLite& noise, int seed, float frequency, int
                             type = (y < seaLevel + 1) ? BLOCK_ICE : BLOCK_SNOW;
                             if (y > seaLevel + 5 && (rand() % 100 < 5)) type = BLOCK_ICE;
                         }
-                        else if (isSnowy) type = BLOCK_SNOW;
+                        else if (isSnowy) type = BLOCK_GRASS;
                         else if (isDesert) type = BLOCK_SAND;
                         else if (isSavanna) type = (rand() % 10 < 3) ? BLOCK_SAND : BLOCK_GRASS; 
                         else if (y > 105) type = BLOCK_SNOW; 
@@ -247,6 +247,7 @@ void Chunk::generateTerrain(FastNoiseLite& noise, int seed, float frequency, int
                 else if (r < 30 && !isDesert && !isSnowy && !isPolar) set(x, h + 1, z, BLOCK_FLOWER_RED);
                 else if (r < 40 && !isDesert && !isSnowy && !isPolar) set(x, h + 1, z, BLOCK_FLOWER_BLUE);
                 else if (r < 100 && !isDesert && !isPolar) set(x, h + 1, z, BLOCK_TALL_GRASS);
+                else if (isSnowy && r < 1500) set(x, h + 1, z, BLOCK_SNOW_LAYER);
             }
         }
     }
