@@ -39,7 +39,7 @@ void GameRegistry::init() {
     registerDefBlock(25, "Oak Planks", {0.82f, 0.72f, 0.58f}, 10, 1);
     registerDefBlock(26, "Bricks", {0.80f, 0.60f, 0.50f}, 11, 1);
     registerDefBlock(27, "Ice", {0.85f, 0.92f, 1.00f}, 12, 1, true);
-    registerDefBlock(28, "Fire", {1.00f, 0.60f, 0.15f}, 5, 0, true);
+    registerDefBlock(28, "Fire", {1.00f, 0.75f, 0.20f}, 8, 4, true);
     registerDefBlock(29, "Snow Layer", {1.00f, 1.00f, 1.00f}, 9, 0, true);
     registerDefBlock(30, "Gravel", {0.90f, 0.85f, 0.70f}, 14, 1);
     registerDefBlock(31, "Clay", {0.65f, 0.65f, 0.70f}, 15, 1);
@@ -401,6 +401,19 @@ void GameRegistry::init() {
         m.parts.push_back({"Leg BR",  { 0.0f, 0.0f, -0.375f}, {0.25f, 0.375f, 0.25f}, {0.125f, 0.375f, 0.125f}, {0.2f, 0.8f, 0.2f}, true});
         registerMob(m);
     }
+
+    // ========== VILLAGER ==========
+    {
+        MobDefinition m;
+        m.type = MOB_VILLAGER; m.name = "Villager"; m.maxHp = 20; m.speed = 1.5f;
+        m.parts.push_back({"Body",    {-0.25f, 0.75f, -0.1875f}, {0.5f, 0.75f, 0.375f}, {0,0,0}, {0.5f, 0.3f, 0.2f}});
+        m.parts.push_back({"Head",    {-0.25f, 1.5f, -0.25f}, {0.5f, 0.625f, 0.5f}, {0, -0.25f, 0}, {0.8f, 0.6f, 0.5f}, false, true});
+        m.parts.push_back({"Nose",    {-0.0625f, 1.625f, 0.25f}, {0.125f, 0.25f, 0.125f}, {0,0,0}, {0.8f, 0.6f, 0.5f}});
+        m.parts.push_back({"Arms",    {-0.25f, 0.875f, -0.3125f}, {0.5f, 0.25f, 0.125f}, {0,0,0}, {0.5f, 0.3f, 0.2f}});
+        m.parts.push_back({"Leg L",   {-0.25f, 0.0f, -0.125f}, {0.25f, 0.75f, 0.25f}, {0.125f, 0.75f, 0.125f}, {0.3f, 0.2f, 0.1f}, true});
+        m.parts.push_back({"Leg R",   { 0.0f, 0.0f, -0.125f}, {0.25f, 0.75f, 0.25f}, {0.125f, 0.75f, 0.125f}, {0.3f, 0.2f, 0.1f}, true});
+        registerMob(m);
+    }
     // ========== PIG ==========
     // Minecraft pig: body 10w×8h×16d px, head 8×8×8, snout 4×3×1, legs 4×6×4
     // Body bottom at Y=0.375 (6px).
@@ -694,27 +707,27 @@ void GameRegistry::init() {
         registerTool(t);
     };
 
-    // Pickaxes
-    regTool(1,  "Wooden Pickaxe",   "pickaxe", 1, 2.0f, 2.0f, {0.6f, 0.4f, 0.2f},  59, 1.2f);
-    regTool(2,  "Stone Pickaxe",    "pickaxe", 2, 4.0f, 3.0f, {0.5f, 0.5f, 0.5f},  131, 1.2f);
-    regTool(3,  "Iron Pickaxe",     "pickaxe", 3, 6.0f, 4.0f, {0.85f, 0.85f, 0.85f}, 250, 1.2f);
-    regTool(4,  "Diamond Pickaxe",  "pickaxe", 4, 8.0f, 5.0f, {0.3f, 0.9f, 0.9f}, 1561, 1.2f);
-    // Axes
-    regTool(5,  "Wooden Axe",       "axe", 1, 2.0f, 3.0f, {0.6f, 0.4f, 0.2f},  59, 0.8f);
-    regTool(6,  "Stone Axe",        "axe", 2, 4.0f, 4.0f, {0.5f, 0.5f, 0.5f},  131, 0.8f);
-    regTool(7,  "Iron Axe",         "axe", 3, 6.0f, 5.0f, {0.85f, 0.85f, 0.85f}, 250, 0.9f);
-    regTool(8,  "Diamond Axe",      "axe", 4, 8.0f, 6.0f, {0.3f, 0.9f, 0.9f}, 1561, 1.0f);
-    // Shovels
-    regTool(9,  "Wooden Shovel",    "shovel", 1, 2.0f, 1.0f, {0.6f, 0.4f, 0.2f},  59, 1.0f);
-    regTool(10, "Stone Shovel",     "shovel", 2, 4.0f, 2.0f, {0.5f, 0.5f, 0.5f},  131, 1.0f);
-    regTool(11, "Iron Shovel",      "shovel", 3, 6.0f, 3.0f, {0.85f, 0.85f, 0.85f}, 250, 1.0f);
-    regTool(12, "Diamond Shovel",   "shovel", 4, 8.0f, 4.0f, {0.3f, 0.9f, 0.9f}, 1561, 1.0f);
-    // Swords
+    // Pickaxes (Minecraft exact: 2/3/4/5 damage, 1.2/s attack)
+    regTool(1,  "Wooden Pickaxe",   "pickaxe", 1, 2.0f, 2.0f, {0.6f, 0.4f, 0.2f},  59, 1.2f, 0.0f);
+    regTool(2,  "Stone Pickaxe",    "pickaxe", 2, 4.0f, 3.0f, {0.5f, 0.5f, 0.5f},  131, 1.2f, 0.0f);
+    regTool(3,  "Iron Pickaxe",     "pickaxe", 3, 6.0f, 4.0f, {0.85f, 0.85f, 0.85f}, 250, 1.2f, 0.0f);
+    regTool(4,  "Diamond Pickaxe",  "pickaxe", 4, 8.0f, 5.0f, {0.3f, 0.9f, 0.9f}, 1561, 1.2f, 0.0f);
+    // Axes (Minecraft: 7/9/9/9 damage, 0.8/0.8/0.9/1.0 attack speed, axes deal more damage than swords)
+    regTool(5,  "Wooden Axe",       "axe", 1, 2.0f, 7.0f, {0.6f, 0.4f, 0.2f},  59, 0.8f, 0.3f);
+    regTool(6,  "Stone Axe",        "axe", 2, 4.0f, 9.0f, {0.5f, 0.5f, 0.5f},  131, 0.8f, 0.3f);
+    regTool(7,  "Iron Axe",         "axe", 3, 6.0f, 9.0f, {0.85f, 0.85f, 0.85f}, 250, 0.9f, 0.3f);
+    regTool(8,  "Diamond Axe",      "axe", 4, 8.0f, 9.0f, {0.3f, 0.9f, 0.9f}, 1561, 1.0f, 0.3f);
+    // Shovels (Minecraft: 2.5/3.5/4.5/5.5 damage, 1.0/s)
+    regTool(9,  "Wooden Shovel",    "shovel", 1, 2.0f, 2.5f, {0.6f, 0.4f, 0.2f},  59, 1.0f, 0.0f);
+    regTool(10, "Stone Shovel",     "shovel", 2, 4.0f, 3.5f, {0.5f, 0.5f, 0.5f},  131, 1.0f, 0.0f);
+    regTool(11, "Iron Shovel",      "shovel", 3, 6.0f, 4.5f, {0.85f, 0.85f, 0.85f}, 250, 1.0f, 0.0f);
+    regTool(12, "Diamond Shovel",   "shovel", 4, 8.0f, 5.5f, {0.3f, 0.9f, 0.9f}, 1561, 1.0f, 0.0f);
+    // Swords (Minecraft exact: 4/5/6/7 damage, 1.6/s attack speed)
     regTool(13, "Wooden Sword",     "sword", 1, 1.0f, 4.0f, {0.6f, 0.4f, 0.2f},  59, 1.6f, 0.4f);
     regTool(14, "Stone Sword",      "sword", 2, 1.0f, 5.0f, {0.5f, 0.5f, 0.5f},  131, 1.6f, 0.4f);
     regTool(15, "Iron Sword",       "sword", 3, 1.0f, 6.0f, {0.85f, 0.85f, 0.85f}, 250, 1.6f, 0.4f);
     regTool(16, "Diamond Sword",    "sword", 4, 1.0f, 7.0f, {0.3f, 0.9f, 0.9f}, 1561, 1.6f, 0.5f);
-    // Hoes
+    // Hoes (Minecraft: 1 damage, increasing speed per tier)
     regTool(17, "Wooden Hoe",       "hoe", 1, 1.0f, 1.0f, {0.6f, 0.4f, 0.2f},  59, 1.0f);
     regTool(18, "Stone Hoe",        "hoe", 2, 1.0f, 1.0f, {0.5f, 0.5f, 0.5f},  131, 2.0f);
     regTool(19, "Iron Hoe",         "hoe", 3, 1.0f, 1.0f, {0.85f, 0.85f, 0.85f}, 250, 3.0f);
@@ -723,6 +736,10 @@ void GameRegistry::init() {
     regTool(21, "Bow",              "bow", 1, 1.0f, 6.0f, {0.6f, 0.4f, 0.2f}, 384, 1.0f, 0.0f);
     regTool(22, "Shield",           "shield", 1, 1.0f, 1.0f, {0.6f, 0.4f, 0.2f}, 336, 0.0f, 2.0f);
     regTool(23, "Fishing Rod",      "fishing_rod", 1, 1.0f, 0.0f, {0.6f, 0.4f, 0.2f}, 64, 0.0f, 0.0f);
+
+    // Fire Aspect: Iron Sword (id 15) and Diamond Sword (id 16) set mobs on fire
+    if (m_tools.count(15)) m_tools[15].specialEffect = "fire_aspect";
+    if (m_tools.count(16)) m_tools[16].specialEffect = "fire_aspect";
 
     // --- Block physics defaults ---
     auto setPhysics = [&](uint8_t id, float fric, float slip, int opa, bool flame, int burn, bool repl, int redstone) {
@@ -743,4 +760,28 @@ void GameRegistry::init() {
     setPhysics(BLOCK_GLASS,   0.6f, 0.0f, 0,  false, 0, false, 0);
     setPhysics(BLOCK_SAND,    0.6f, 0.0f, 15, false, 0, false, 0);
     setPhysics(BLOCK_TALL_GRASS, 0.0f, 0.0f, 0, true, 60, true, 0);
+
+    // Additional flammable blocks
+    setPhysics(BLOCK_BIRCH_WOOD,    0.6f, 0.0f, 15, true, 300, false, 0);
+    setPhysics(BLOCK_BIRCH_LEAVES,  0.6f, 0.0f, 1,  true,  60, false, 0);
+    setPhysics(BLOCK_CHERRY_WOOD,   0.6f, 0.0f, 15, true, 300, false, 0);
+    setPhysics(BLOCK_CHERRY_LEAVES, 0.6f, 0.0f, 1,  true,  60, false, 0);
+
+    // Wool variants (IDs 46-61)
+    for (uint8_t wid = 46; wid <= 61; ++wid) {
+        auto it = m_blocks.find(wid);
+        if (it != m_blocks.end()) {
+            it->second.flammable = true;
+            it->second.burnTime  = 200;
+        }
+    }
+
+    // Bookshelf (68), Oak Fence (106), Chest (75), Crafting Table (79)
+    for (uint8_t bid : {(uint8_t)68, (uint8_t)75, (uint8_t)79, (uint8_t)106}) {
+        auto it = m_blocks.find(bid);
+        if (it != m_blocks.end()) {
+            it->second.flammable = true;
+            it->second.burnTime  = 300;
+        }
+    }
 }

@@ -1,4 +1,4 @@
-#include "MobDesigner.hpp"
+﻿#include "MobDesigner.hpp"
 #include "Registry.hpp"
 #include "Framebuffer.hpp"
 #include "Shader.hpp"
@@ -20,7 +20,9 @@
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
+#ifndef NOMINMAX
 #define NOMINMAX
+#endif
 #include <windows.h>
 #include <commdlg.h>
 
@@ -49,6 +51,8 @@ namespace { std::string openFileDialog() { return ""; } }
 
 void MobDesigner::show(bool* open, unsigned int atlasID, Framebuffer* previewBuffer, Shader* previewShader, Framebuffer* partPreviewBuf) {
     if (!*open) return;
+    ImVec2 mvCenter = ImGui::GetMainViewport()->GetCenter();
+    ImGui::SetNextWindowPos(mvCenter, ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSize(ImVec2(1100, 700), ImGuiCond_FirstUseEver);
 
     // Intercept close: if dirty, show save prompt

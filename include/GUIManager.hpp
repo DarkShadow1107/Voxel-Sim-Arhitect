@@ -79,7 +79,7 @@ private:
     class Framebuffer* m_partPreviewBuf  = nullptr;
     class Shader* m_previewShader = nullptr;
     bool m_initialized = false;
-    bool m_vsync = true;
+    bool m_vsync = false;
 
     // Modular UI panels
     BlockDesigner  m_blockDesigner;

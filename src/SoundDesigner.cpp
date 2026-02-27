@@ -1,4 +1,4 @@
-#include "SoundDesigner.hpp"
+﻿#include "SoundDesigner.hpp"
 #include "imgui.h"
 
 #include <algorithm>
@@ -653,6 +653,8 @@ void SoundDesigner::show(bool* open) {
         generatePreviewBuffer();
     }
 
+    ImVec2 mvCenter = ImGui::GetMainViewport()->GetCenter();
+    ImGui::SetNextWindowPos(mvCenter, ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSize(ImVec2(1200, 750), ImGuiCond_FirstUseEver);
 
     bool windowOpen = true;

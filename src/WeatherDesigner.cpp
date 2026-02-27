@@ -1,4 +1,4 @@
-#include "WeatherDesigner.hpp"
+﻿#include "WeatherDesigner.hpp"
 #include "imgui.h"
 
 #include <algorithm>
@@ -9,7 +9,9 @@
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
+#ifndef NOMINMAX
 #define NOMINMAX
+#endif
 #include <windows.h>
 #include <commdlg.h>
 namespace {
@@ -320,6 +322,8 @@ void WeatherDesigner::show(bool* open) {
     if (!*open) return;
     if (!m_inited) { initDefaults(); m_inited = true; }
 
+    ImVec2 mvCenter = ImGui::GetMainViewport()->GetCenter();
+    ImGui::SetNextWindowPos(mvCenter, ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSize(ImVec2(1200, 750), ImGuiCond_FirstUseEver);
     if (!ImGui::Begin("Weather Designer", open)) {
         ImGui::End();

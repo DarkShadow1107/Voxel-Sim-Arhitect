@@ -1,4 +1,4 @@
-#include "WorldEditor.hpp"
+﻿#include "WorldEditor.hpp"
 #include "imgui.h"
 
 #include <string>
@@ -318,6 +318,8 @@ void WorldEditor::show(bool* open) {
         m_initialized = true;
     }
 
+    ImVec2 mvCenter = ImGui::GetMainViewport()->GetCenter();
+    ImGui::SetNextWindowPos(mvCenter, ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSize(ImVec2(1100, 750), ImGuiCond_FirstUseEver);
     if (!ImGui::Begin("World Editor", open)) {
         ImGui::End();

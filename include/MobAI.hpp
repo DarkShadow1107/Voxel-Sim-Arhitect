@@ -20,6 +20,7 @@ enum MobType {
     MOB_ZOMBIE,
     MOB_SKELETON,
     MOB_CREEPER,
+    MOB_VILLAGER,
     MOB_COUNT
 };
 
@@ -51,7 +52,7 @@ struct Mob {
     SheepColor sheepColor;
     
     // Engine Improvements: Simple State Machine
-    enum State { IDLE, WANDER, FOLLOW, FLEE } state;
+    enum State { IDLE, WANDER, FOLLOW, FLEE, ATTACK } state;
     Vec3 targetPos;
     float stateTimer;
 
@@ -59,11 +60,19 @@ struct Mob {
     int currentAINode = -1;
     float aiNodeTimer = 0.0f;
 
+    // Combat & visual feedback
+    float attackCooldown  = 0.0f;  // Seconds until next melee attack
+    float hurtFlashTimer  = 0.0f;  // Red flash remaining (set when hit)
+    float idleAnimOffset  = 0.0f;  // Per-mob phase offset for breathing desync
+    Vec3  knockbackVel    = {0,0,0}; // Knockback burst velocity (decays each frame)
+
     Mob() : type(MOB_COW), hp(10.0f), maxHp(10.0f), wanderTimer(0.0f), wanderYawDeg(0.0f),
            yawDeg(0.0f), velocity{0,0,0}, animTime(0.0f), isMoving(false),
            onFireSeconds(0.0f), ambientSoundTimer(0.0f), sheepColor(COLOR_WHITE),
            state(IDLE), targetPos{0,0,0}, stateTimer(0.0f),
-           currentAINode(-1), aiNodeTimer(0.0f) {}
+           currentAINode(-1), aiNodeTimer(0.0f),
+           attackCooldown(0.0f), hurtFlashTimer(0.0f), idleAnimOffset(0.0f),
+           knockbackVel{0,0,0} {}
 };
 
 class FastNoiseLite;

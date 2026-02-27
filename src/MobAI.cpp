@@ -18,6 +18,16 @@ void MobAI::update(Mob& mob, Transform& transform, World& world, double dt, Vec3
         mob.hp -= (float)dt * 1.5f;
     }
 
+    // Decay combat timers
+    if (mob.attackCooldown > 0.0f)  mob.attackCooldown  = std::max(0.0f, mob.attackCooldown  - (float)dt);
+    if (mob.hurtFlashTimer > 0.0f)  mob.hurtFlashTimer  = std::max(0.0f, mob.hurtFlashTimer  - (float)dt);
+
+    // Decay knockback (exponential drag each frame)
+    const float knockDecay = std::pow(0.05f, (float)dt); // ~decays to 5% per second
+    mob.knockbackVel.x *= knockDecay;
+    mob.knockbackVel.y *= knockDecay;
+    mob.knockbackVel.z *= knockDecay;
+
     // Ambient Sound Logic
     mob.ambientSoundTimer -= (float)dt;
     if (mob.ambientSoundTimer <= 0.0f) {
@@ -169,11 +179,15 @@ void MobAI::update(Mob& mob, Transform& transform, World& world, double dt, Vec3
     } else {
     // --- Fallback: original hardcoded AI ---
 
+    auto isHostile = [](MobType t) {
+        return t == MOB_ZOMBIE || t == MOB_SKELETON || t == MOB_CREEPER;
+    };
+
     // Simple reaction to player
-    if (mob.state != Mob::FLEE) {
+    if (mob.state != Mob::FLEE && mob.state != Mob::ATTACK) {
         if (distToPlayer < 5.0f && (mob.type == MOB_DOG || mob.type == MOB_CAT)) {
             mob.state = Mob::FOLLOW;
-        } else if (distToPlayer < 10.0f && (mob.type == MOB_ZOMBIE || mob.type == MOB_SKELETON || mob.type == MOB_CREEPER)) {
+        } else if (distToPlayer < 14.0f && isHostile(mob.type)) {
             mob.state = Mob::FOLLOW; // Hostile mobs follow to attack
         } else if (distToPlayer < 3.0f && !isAquatic(mob.type) && mob.type != MOB_BIRD) {
             // Skittish animals flee
@@ -191,8 +205,10 @@ void MobAI::update(Mob& mob, Transform& transform, World& world, double dt, Vec3
             handleWander(mob, dt);
             break;
         case Mob::FOLLOW:
-            if (distToPlayer > 15.0f) {
+            if (distToPlayer > 18.0f) {
                 mob.state = Mob::WANDER;
+            } else if (isHostile(mob.type) && distToPlayer < 2.0f) {
+                mob.state = Mob::ATTACK;
             } else if (distToPlayer > 1.5f) {
                 mob.isMoving = true;
                 Vec3 dir = normalize(viewerPos - transform.position);
@@ -203,7 +219,21 @@ void MobAI::update(Mob& mob, Transform& transform, World& world, double dt, Vec3
                 mob.yawDeg += yawDelta * std::min(1.0f, (float)dt * 5.0f);
             } else {
                 mob.isMoving = false;
-                // Attack logic could go here
+            }
+            break;
+        case Mob::ATTACK:
+            if (distToPlayer > 3.5f) {
+                // Lost melee range – chase again
+                mob.state = Mob::FOLLOW;
+            } else {
+                // Face and lunge at player
+                mob.isMoving = true;
+                Vec3 dir = normalize(viewerPos - transform.position);
+                float targetYaw = std::atan2(dir.x, dir.z) * 57.2957795f;
+                float yawDelta = targetYaw - mob.yawDeg;
+                while (yawDelta > 180.0f) yawDelta -= 360.0f;
+                while (yawDelta < -180.0f) yawDelta += 360.0f;
+                mob.yawDeg += yawDelta * std::min(1.0f, (float)dt * 8.0f);
             }
             break;
         case Mob::FLEE:
@@ -217,7 +247,7 @@ void MobAI::update(Mob& mob, Transform& transform, World& world, double dt, Vec3
                 float yawDelta = targetYaw - mob.yawDeg;
                 while (yawDelta > 180.0f) yawDelta -= 360.0f;
                 while (yawDelta < -180.0f) yawDelta += 360.0f;
-                mob.yawDeg += yawDelta * std::min(1.0f, (float)dt * 6.0f);
+                mob.yawDeg += yawDelta * std::min(1.0f, (float)dt * 8.0f);
             }
             break;
     }
@@ -234,8 +264,11 @@ void MobAI::update(Mob& mob, Transform& transform, World& world, double dt, Vec3
     if (mob.isMoving || isAquatic(mob.type) || mob.type == MOB_BIRD) {
         float animSpeed = isAquatic(mob.type) ? 3.0f : 5.0f;
         if (mob.type == MOB_BIRD) animSpeed = 8.0f;
-        if (mob.state == Mob::FLEE) animSpeed *= 1.5f;
+        if (mob.state == Mob::FLEE || mob.state == Mob::ATTACK) animSpeed *= 1.5f;
         mob.animTime += (float)dt * animSpeed;
+    } else {
+        // Advance slowly so idle breathing animation plays
+        mob.animTime += (float)dt * 0.8f;
     }
 }
 
@@ -254,6 +287,12 @@ void MobAI::handleWander(Mob& mob, double dt) {
         }
     }
 
+    // Organic micro-steering jitter while walking
+    if (mob.isMoving) {
+        float jitter = ((float)(std::rand() % 201) - 100.0f) * 0.003f; // ±0.3 deg/s
+        mob.wanderYawDeg += jitter * (float)dt * 60.0f;
+    }
+
     // Smooth rotation towards wanderYawDeg
     float yawDelta = mob.wanderYawDeg - mob.yawDeg;
     while (yawDelta > 180.0f) yawDelta -= 360.0f;
@@ -270,17 +309,67 @@ void MobAI::handleEnvironment(Mob& mob, Transform& transform, World& world, doub
     uint8_t headBlock = world.getBlock(mx, my + 1, mz);
 
     bool inWater = (feetBlock == 4 || headBlock == 4); // BLOCK_WATER
-    bool inLava = (feetBlock == 5 || headBlock == 5);  // BLOCK_LAVA
+    bool inLava  = (feetBlock == 5 || headBlock == 5); // BLOCK_LAVA
+    bool inFire  = (feetBlock == 28 || headBlock == 28); // BLOCK_FIRE
 
+    // Lava: heavy damage and sets on fire
     if (inLava) {
-        mob.hp -= (float)dt * 6.0f;
-        mob.onFireSeconds = 2.0f;
+        mob.hp -= (float)dt * 4.0f; // 4 HP/sec in lava (like Minecraft)
+        mob.onFireSeconds = 15.0f;  // Lava sets on fire for 15 seconds
+        // Panic: force flee state away from lava
+        mob.state = Mob::FLEE;
+        mob.stateTimer = 3.0f;
+        mob.wanderYawDeg += 180.0f + (float)(std::rand() % 90 - 45);
+        mob.isMoving = true;
+    }
+
+    // Fire block contact: damage and continue burning
+    if (inFire && !inLava) {
+        mob.hp -= (float)dt * 1.0f;
+        mob.onFireSeconds = std::max(mob.onFireSeconds, 8.0f);
+        mob.state = Mob::FLEE;
+        mob.stateTimer = 2.0f;
+        mob.isMoving = true;
+    }
+
+    // On fire: flee toward water if nearby, otherwise random panic
+    if (mob.onFireSeconds > 0.0f && !inLava && !inFire) {
+        if (mob.state != Mob::ATTACK) { // Don't interrupt attack
+            mob.state = Mob::FLEE;
+            if (mob.stateTimer <= 0.0f) mob.stateTimer = 2.0f;
+            mob.isMoving = true;
+
+            // Search for water nearby to extinguish fire
+            bool foundWater = false;
+            for (int dx = -5; dx <= 5 && !foundWater; ++dx) {
+                for (int dz = -5; dz <= 5 && !foundWater; ++dz) {
+                    for (int dy = -2; dy <= 2 && !foundWater; ++dy) {
+                        if (world.getBlock(mx + dx, my + dy, mz + dz) == 4) { // BLOCK_WATER
+                            // Run toward water
+                            float tx = (float)(mx + dx);
+                            float tz = (float)(mz + dz);
+                            float diffX = tx - transform.position.x;
+                            float diffZ = tz - transform.position.z;
+                            mob.wanderYawDeg = std::atan2(diffX, diffZ) * 57.2957795f;
+                            foundWater = true;
+                        }
+                    }
+                }
+            }
+            if (!foundWater) {
+                // Panic: random direction changes
+                if ((std::rand() % 5) == 0) mob.wanderYawDeg += (float)(std::rand() % 180 - 90);
+            }
+        }
+
+        // Water extinguishes fire
+        if (inWater) mob.onFireSeconds = 0.0f;
     }
 
     if (isAquatic(mob.type) && !inWater) {
         mob.hp -= (float)dt * 2.0f;
-        mob.velocity.y = -4.0f; // Sink if out of ocean
-        mob.isMoving = true;    // Struggle
+        mob.velocity.y = -4.0f;
+        mob.isMoving = true;
     }
 
     // Obstacle / Cliff Avoidance
@@ -291,7 +380,8 @@ void MobAI::handleEnvironment(Mob& mob, Transform& transform, World& world, doub
     uint8_t bFront = world.getBlock((int)std::floor(frontCheck.x), (int)std::floor(frontCheck.y), (int)std::floor(frontCheck.z));
     uint8_t bBelow = world.getBlock((int)std::floor(frontCheck.x), (int)std::floor(frontCheck.y - 1.0f), (int)std::floor(frontCheck.z));
 
-    if (bFront == 5 || (bBelow == 0 && !isAquatic(mob.type) && mob.type != MOB_BIRD)) {
+    // Avoid lava in front (5 = BLOCK_LAVA)
+    if (bFront == 5 || bBelow == 5 || (bBelow == 0 && !isAquatic(mob.type) && mob.type != MOB_BIRD)) {
         mob.wanderYawDeg += 90.0f + (float)(std::rand() % 180);
         if (mob.type == MOB_BIRD) mob.velocity.y = 5.0f;
     }
@@ -302,13 +392,18 @@ void MobAI::handleMovement(Mob& mob, Transform& transform, World& world, double 
     Vec3 forward = {std::sin(yawRad), 0.0f, std::cos(yawRad)};
     
     float speed = mob.isMoving ? getBaseSpeed(mob.type) : 0.0f;
-    
+
+    // On fire: mob sprints at 1.5x speed in panic (Minecraft-like)
+    if (mob.onFireSeconds > 0.0f && mob.state == Mob::FLEE) speed *= 1.5f;
+
     int mx = (int)std::floor(transform.position.x);
     int my = (int)std::floor(transform.position.y);
     int mz = (int)std::floor(transform.position.z);
     bool inWater = (world.getBlock(mx, my, mz) == 4);
-    
+    bool inLava  = (world.getBlock(mx, my, mz) == 5);
+
     if (inWater) speed *= 0.6f;
+    if (inLava)  speed *= 0.3f; // Very slow in lava
 
     Vec3 wishVel = forward * speed;
 
@@ -349,16 +444,56 @@ void MobAI::handleMovement(Mob& mob, Transform& transform, World& world, double 
     mob.velocity.z = wishVel.z;
     if (isAquatic(mob.type) || mob.type == MOB_BIRD) mob.velocity.y = wishVel.y;
 
-    transform.position.x += mob.velocity.x * (float)dt;
-    transform.position.y += mob.velocity.y * (float)dt;
-    transform.position.z += mob.velocity.z * (float)dt;
-    
-    // Simple ground collision to keep them from falling through world
+    float dvx = (mob.velocity.x + mob.knockbackVel.x) * (float)dt;
+    float dvy = (mob.velocity.y + mob.knockbackVel.y) * (float)dt;
+    float dvz = (mob.velocity.z + mob.knockbackVel.z) * (float)dt;
+
     if (!isAquatic(mob.type) && mob.type != MOB_BIRD) {
-        if (world.isSolid((int)std::floor(transform.position.x), (int)std::floor(transform.position.y), (int)std::floor(transform.position.z))) {
-            transform.position.y = std::ceil(transform.position.y);
-            mob.velocity.y = 0;
+        // Per-axis sweep: prevents seizures when walking into a wall
+        auto solidAt = [&](float px, float py, float pz) -> bool {
+            return world.isSolid((int)std::floor(px), (int)std::floor(py),       (int)std::floor(pz))
+                || world.isSolid((int)std::floor(px), (int)std::floor(py + 0.8f), (int)std::floor(pz));
+        };
+
+        // X axis
+        if (!solidAt(transform.position.x + dvx, transform.position.y, transform.position.z)) {
+            transform.position.x += dvx;
+        } else {
+            mob.velocity.x      = 0.0f;
+            mob.knockbackVel.x  = 0.0f;
+            // Deflect mob so it walks around the obstacle instead of freezing
+            if (mob.isMoving) mob.wanderYawDeg += 90.0f + (float)(rand() % 91);
         }
+
+        // Z axis
+        if (!solidAt(transform.position.x, transform.position.y, transform.position.z + dvz)) {
+            transform.position.z += dvz;
+        } else {
+            mob.velocity.z      = 0.0f;
+            mob.knockbackVel.z  = 0.0f;
+            if (mob.isMoving) mob.wanderYawDeg += 90.0f + (float)(rand() % 91);
+        }
+
+        // Y axis — gravity / ground snap (no ceil pop-up that caused oscillation)
+        float newY = transform.position.y + dvy;
+        if (world.isSolid((int)std::floor(transform.position.x), (int)std::floor(newY), (int)std::floor(transform.position.z))) {
+            if (dvy < 0.0f) {
+                // Land cleanly on top of the block
+                transform.position.y = std::floor(newY + 1.0f);
+                mob.velocity.y      = 0.0f;
+                mob.knockbackVel.y  = 0.0f;
+            } else {
+                // Head-bonk: start falling
+                mob.velocity.y = -2.0f;
+            }
+        } else {
+            transform.position.y = newY;
+        }
+    } else {
+        // Aquatic / bird: free movement, no collision
+        transform.position.x += dvx;
+        transform.position.y += dvy;
+        transform.position.z += dvz;
     }
 }
 
@@ -430,7 +565,9 @@ void MobAI::spawnMobsInChunk(Registry& registry, Chunk* chunk, int chunkX, int c
         possibleMobs = {MOB_RABBIT, MOB_SKELETON, MOB_CREEPER};
     } else if (biome == BIOME_SAVANNA) { // Plains/Savanna
         possibleMobs = {MOB_COW, MOB_SHEEP, MOB_PIG, MOB_DOG, MOB_RABBIT, MOB_ZOMBIE};
-    } else { // Plains / Default
+    } else if (biome == BIOME_PLAINS) {
+        possibleMobs = {MOB_COW, MOB_SHEEP, MOB_PIG, MOB_CHICKEN, MOB_DOG, MOB_RABBIT, MOB_ZOMBIE, MOB_SKELETON, MOB_CREEPER, MOB_VILLAGER};
+    } else { // Default
          possibleMobs = {MOB_COW, MOB_SHEEP, MOB_PIG, MOB_CHICKEN, MOB_DOG, MOB_RABBIT, MOB_ZOMBIE, MOB_SKELETON, MOB_CREEPER};
     }
 
@@ -506,6 +643,7 @@ void MobAI::spawnMobsInChunk(Registry& registry, Chunk* chunk, int chunkX, int c
             m.wanderTimer = (float)(rand() % 300) / 10.0f;
             m.isMoving = false;
             m.hp = isWaterMob ? 8.0f : 10.0f;
+            m.idleAnimOffset = (float)(rand() % 1000) / 1000.0f * 6.28318f; // random phase 0..2π
             
             registry.addComponent(ent, m);
             registry.addComponent(ent, t);

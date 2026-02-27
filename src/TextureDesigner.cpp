@@ -1,4 +1,4 @@
-#include "TextureDesigner.hpp"
+﻿#include "TextureDesigner.hpp"
 #include "Texture.hpp"
 #include "imgui.h"
 #include <cstring>
@@ -15,6 +15,8 @@ void TextureDesigner::show(bool* open, Texture* atlas) {
         m_initialized = true;
     }
 
+    ImVec2 mvCenter = ImGui::GetMainViewport()->GetCenter();
+    ImGui::SetNextWindowPos(mvCenter, ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSize(ImVec2(700, 600), ImGuiCond_FirstUseEver);
     if (!ImGui::Begin("Texture Designer", open)) {
         ImGui::End();

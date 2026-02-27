@@ -24,11 +24,11 @@ void* ArenaAllocator::allocate(size_t size, size_t alignment) {
     uintptr_t current_ptr = reinterpret_cast<uintptr_t>(m_buffer) + m_offset;
     uintptr_t padding = (alignment - (current_ptr % alignment)) % alignment;
     
-    if (m_offset + padding + size > m_size) {
+    if (m_offset + padding + size > m_size || m_offset + padding + size < m_offset) { // Added overflow check
         // Optimization: if we are close to the end, we don't spam stderr every tick if requested many times
         static int last_fail_tick = 0;
         if (m_allocatedCount - last_fail_tick > 100) {
-            std::cerr << "ARENA FULL: Requested " << size << " bytes" << std::endl;
+            std::cerr << "ARENA FULL or OVERFLOW: Requested " << size << " bytes" << std::endl;
             last_fail_tick = m_allocatedCount;
         }
         return nullptr;

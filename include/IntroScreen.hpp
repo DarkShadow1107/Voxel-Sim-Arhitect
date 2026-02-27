@@ -103,11 +103,11 @@ private:
     enum Phase { FADE_IN, LOGO_ASSEMBLE, TITLE_IN, HOLDING, DISSOLVING, DONE };
     Phase m_phase = FADE_IN;
 
-    static constexpr float kFadeInTime = 0.6f;
-    static constexpr float kLogoTime = 1.8f;
-    static constexpr float kTitleTime = 1.2f;
-    static constexpr float kHoldTime = 2.0f;
-    static constexpr float kDissolveTime = 0.8f;
+    static constexpr float kFadeInTime   = 0.3f;   // was 0.6f — snappier start
+    static constexpr float kLogoTime     = 1.0f;   // was 1.8f — logo assembles faster
+    static constexpr float kTitleTime    = 0.7f;   // was 1.2f — title animates faster
+    static constexpr float kHoldTime     = 2.0f;   // unchanged — time to read
+    static constexpr float kDissolveTime = 0.5f;   // was 0.8f — quick exit
 
     void initStars();
     void initLogo();

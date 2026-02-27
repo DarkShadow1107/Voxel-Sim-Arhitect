@@ -1,4 +1,4 @@
-#include "ToolDesigner.hpp"
+﻿#include "ToolDesigner.hpp"
 #include "Registry.hpp"
 #include "Framebuffer.hpp"
 #include "Shader.hpp"
@@ -17,6 +17,8 @@
 
 void ToolDesigner::show(bool* open, unsigned int atlasID, Framebuffer* previewBuffer, Shader* previewShader) {
     if (!*open) return;
+    ImVec2 mvCenter = ImGui::GetMainViewport()->GetCenter();
+    ImGui::SetNextWindowPos(mvCenter, ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSize(ImVec2(1050, 650), ImGuiCond_FirstUseEver);
 
     bool windowOpen = true;

@@ -151,6 +151,14 @@ void AudioManager::playSound(const std::string& filePath, float volume) {
     ma_engine_play_sound(engine, fullPath.string().c_str(), NULL);
 }
 
+// Callback to clean up dynamically allocated one-shot sounds
+static void sound_end_callback(void* /*pUserData*/, ma_sound* pSound) {
+    if (pSound) {
+        ma_sound_uninit(pSound);
+        delete pSound;
+    }
+}
+
 void AudioManager::playSoundWithPitch(const std::string& filePath, float volume, float pitch) {
     if (!engine) return;
     
@@ -161,7 +169,10 @@ void AudioManager::playSoundWithPitch(const std::string& filePath, float volume,
     if (ma_sound_init_from_file(engine, fullPath.string().c_str(), MA_SOUND_FLAG_DECODE, NULL, NULL, sound) == MA_SUCCESS) {
         ma_sound_set_volume(sound, volume * masterVolume);
         ma_sound_set_pitch(sound, pitch);
+        ma_sound_set_end_callback(sound, sound_end_callback, NULL);
         ma_sound_start(sound);
+    } else {
+        delete sound;
     }
 }
 

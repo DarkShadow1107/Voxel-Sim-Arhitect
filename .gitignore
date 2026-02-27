@@ -12,5 +12,7 @@ build/bin/*
 # Ignore all .ini files
 *.ini
 
+*cwd
+
 updates.txt
 resources.rc

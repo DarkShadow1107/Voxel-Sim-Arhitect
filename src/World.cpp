@@ -13,8 +13,15 @@ World::~World() {}
 
 void World::clear() {
     std::lock_guard<std::mutex> lock(m_resultMutex);
+    std::lock_guard<std::mutex> lockGen(m_genResultMutex);
     m_chunks.clear();
     m_meshResults.clear();
+    m_genResults.clear();
+    m_generatingChunks.clear();
+    m_updateQueue.clear();
+    m_scheduledSet.clear();
+    m_fluidLevels.clear();
+    m_fireAge.clear();
 }
 
 void World::save(const std::string& filename, const WorldMetadata& meta) {
@@ -54,7 +61,7 @@ bool World::load(const std::string& filename, WorldMetadata& metaOut) {
 
     bool newFormat = (magic[0] == 'V' && magic[1] == 'S' && magic[2] == 'A' && magic[3] == '1');
 
-    m_chunks.clear();
+    clear();
 
     if (newFormat) {
         // New format: magic + metadata + chunks
@@ -152,26 +159,114 @@ void World::update(const Vec3& playerPos, FastNoiseLite& noise, int seed, float 
     int px = (int)std::floor(playerPos.x / Chunk::SizeX);
     int pz = (int)std::floor(playerPos.z / Chunk::SizeZ);
 
-    // 1. Load new chunks
+    // 0. Collect generation results from background threads
+    {
+        std::lock_guard<std::mutex> lock(m_genResultMutex);
+        for (auto& res : m_genResults) {
+            uint64_t key = getChunkKey(res.x, res.z);
+            auto data = std::make_unique<ChunkData>();
+            data->x = res.x;
+            data->z = res.z;
+            data->chunk = std::move(res.chunk);
+            data->mesh = std::make_unique<GLMesh>();
+            data->dirty = true;
+            
+            // Schedule fluid updates
+            for (uint32_t packed : data->chunk->m_fluidUpdates) {
+                int lx = (packed >> 16) & 0xFF;
+                int ly = (packed >> 8) & 0xFF;
+                int lz = packed & 0xFF;
+                int wx = res.x * Chunk::SizeX + lx;
+                int wz = res.z * Chunk::SizeZ + lz;
+                uint8_t b = data->chunk->get(lx, ly, lz);
+                scheduleBlockUpdate(wx, ly, wz, (b == BLOCK_LAVA) ? LAVA_TICK_DELAY : WATER_TICK_DELAY);
+            }
+            data->chunk->m_fluidUpdates.clear();
+
+            m_chunks[key] = std::move(data);
+            m_generatingChunks.erase(key);
+            m_newlyGeneratedChunks.push_back({res.x, res.z});
+        }
+        m_genResults.clear();
+    }
+
+    // 1. Load new chunks (dispatch to background threads)
+    int chunksDispatchedThisFrame = 0;
+    const int MAX_CHUNKS_DISPATCHED_PER_FRAME = 4;
+
+    // Collect missing chunks and sort by distance to player
+    struct MissingChunk { int x, z; float distSq; };
+    std::vector<MissingChunk> missingChunks;
+
     for (int z = pz - m_renderDistance; z <= pz + m_renderDistance; ++z) {
         for (int x = px - m_renderDistance; x <= px + m_renderDistance; ++x) {
             uint64_t key = getChunkKey(x, z);
-            if (m_chunks.find(key) == m_chunks.end()) {
-                auto data = std::make_unique<ChunkData>();
-                data->x = x;
-                data->z = z;
-                data->chunk = std::make_unique<Chunk>();
-                data->mesh = std::make_unique<GLMesh>();
-                
-                data->chunk->generateTerrain(noise, seed, freq, baseHeight, x * Chunk::SizeX, z * Chunk::SizeZ);
-                
-                m_newlyGeneratedChunks.push_back({x, z});
-                
-                data->dirty = true;
-                m_chunks[key] = std::move(data);
+            if (m_chunks.find(key) == m_chunks.end() && m_generatingChunks.find(key) == m_generatingChunks.end()) {
+                float dx = (float)x - (float)px;
+                float dz = (float)z - (float)pz;
+                missingChunks.push_back({x, z, dx * dx + dz * dz});
             }
         }
     }
+
+    std::sort(missingChunks.begin(), missingChunks.end(),
+        [](const MissingChunk& a, const MissingChunk& b) { return a.distSq < b.distSq; });
+
+    for (const auto& mc : missingChunks) {
+        if (chunksDispatchedThisFrame >= MAX_CHUNKS_DISPATCHED_PER_FRAME) {
+            break; // Skip dispatching more chunks this frame to maintain FPS
+        }
+
+        uint64_t key = getChunkKey(mc.x, mc.z);
+        m_generatingChunks.insert(key);
+        
+        if (scheduler) {
+            int cx = mc.x;
+            int cz = mc.z;
+            // Copy noise to avoid race conditions
+            FastNoiseLite noiseCopy = noise;
+            scheduler->enqueue([this, cx, cz, noiseCopy, seed, freq, baseHeight]() mutable {
+                auto chunk = std::make_unique<Chunk>();
+                chunk->generateTerrain(noiseCopy, seed, freq, baseHeight, cx * Chunk::SizeX, cz * Chunk::SizeZ);
+                
+                std::lock_guard<std::mutex> lock(m_genResultMutex);
+                m_genResults.push_back({cx, cz, std::move(chunk)});
+            });
+        } else {
+            // Fallback to synchronous
+            auto chunk = std::make_unique<Chunk>();
+            chunk->generateTerrain(noise, seed, freq, baseHeight, mc.x * Chunk::SizeX, mc.z * Chunk::SizeZ);
+            
+            auto data = std::make_unique<ChunkData>();
+            data->x = mc.x;
+            data->z = mc.z;
+            data->chunk = std::move(chunk);
+            data->mesh = std::make_unique<GLMesh>();
+            data->dirty = true;
+
+            // Schedule fluid updates
+            for (uint32_t packed : data->chunk->m_fluidUpdates) {
+                int lx = (packed >> 16) & 0xFF;
+                int ly = (packed >> 8) & 0xFF;
+                int lz = packed & 0xFF;
+                int wx = mc.x * Chunk::SizeX + lx;
+                int wz = mc.z * Chunk::SizeZ + lz;
+                uint8_t b = data->chunk->get(lx, ly, lz);
+                scheduleBlockUpdate(wx, ly, wz, (b == BLOCK_LAVA) ? LAVA_TICK_DELAY : WATER_TICK_DELAY);
+            }
+            data->chunk->m_fluidUpdates.clear();
+
+            m_chunks[key] = std::move(data);
+            m_generatingChunks.erase(key);
+            m_newlyGeneratedChunks.push_back({mc.x, mc.z});
+        }
+        chunksDispatchedThisFrame++;
+    }
+
+    // Generation-placed fluid (oceans, rivers, waterfalls, volcano lava) is
+    // STATIC — it does not simulate until the player disturbs it.  The setBlock()
+    // adjacent-fluid wake-up handles activating nearby fluid when the player
+    // breaks or places a block next to water/lava.  This matches Minecraft behaviour.
 
     // 2. Unload far chunks
     for (auto it = m_chunks.begin(); it != m_chunks.end();) {
@@ -362,12 +457,37 @@ void World::setBlock(int x, int y, int z, uint8_t type) {
         int lz = z - cz * Chunk::SizeZ;
         it->second->chunk->set(lx, y, lz, type);
         it->second->dirty = true;
-        
+
         // Mark neighbors dirty if on edge
         if (lx == 0) { auto n = m_chunks.find(getChunkKey(cx - 1, cz)); if (n != m_chunks.end()) n->second->dirty = true; }
         if (lx == Chunk::SizeX - 1) { auto n = m_chunks.find(getChunkKey(cx + 1, cz)); if (n != m_chunks.end()) n->second->dirty = true; }
         if (lz == 0) { auto n = m_chunks.find(getChunkKey(cx, cz - 1)); if (n != m_chunks.end()) n->second->dirty = true; }
         if (lz == Chunk::SizeZ - 1) { auto n = m_chunks.find(getChunkKey(cx, cz + 1)); if (n != m_chunks.end()) n->second->dirty = true; }
+
+        uint64_t bkey = getBlockKey(x, y, z);
+
+        if (blockIsFluid(type)) {
+            // New fluid source placed by player — no level entry = source (level 0)
+            m_fluidLevels.erase(bkey);
+            scheduleBlockUpdate(x, y, z, (type == BLOCK_LAVA) ? LAVA_TICK_DELAY : WATER_TICK_DELAY);
+        } else if (type == BLOCK_FIRE) {
+            scheduleBlockUpdate(x, y, z, FIRE_TICK_DELAY);
+        } else {
+            // Non-fluid/fire block: clean up any stale simulation state
+            m_fluidLevels.erase(bkey);
+            m_fireAge.erase(bkey);
+            // Wake up adjacent fluid blocks so evaporation/retraction can run.
+            // Without this, flowing blocks never recheck when their source is removed.
+            const int adx[] = {1,-1,0,0,0,0};
+            const int ady[] = {0,0,0,0,1,-1};
+            const int adz[] = {0,0,1,-1,0,0};
+            for (int i = 0; i < 6; i++) {
+                uint8_t nb = getBlock(x+adx[i], y+ady[i], z+adz[i]);
+                if (blockIsFluid(nb))
+                    scheduleBlockUpdate(x+adx[i], y+ady[i], z+adz[i],
+                        blockIsLava(nb) ? LAVA_TICK_DELAY : WATER_TICK_DELAY);
+            }
+        }
     }
 }
 
@@ -385,11 +505,9 @@ uint8_t World::getBlock(int x, int y, int z) const {
 
 bool World::isSolid(int x, int y, int z) const {
     uint8_t block = getBlock(x, y, z);
-    // Treat fluids and foliage as non-solid for collision.
-    // Solid means blocks that should stop player/mobs.
+    // Fluids and foliage are non-solid for collision.
     return block != BLOCK_AIR &&
-           block != BLOCK_WATER &&
-           block != BLOCK_LAVA &&
+           !blockIsFluid(block) &&
            block != BLOCK_FLOWER_RED &&
            block != BLOCK_FLOWER_BLUE &&
            block != BLOCK_TALL_GRASS;
@@ -427,4 +545,370 @@ World::RaycastResult World::raycast(const Vec3& origin, const Vec3& direction, f
         dist += 0.1f;
     }
     return res;
+}
+
+// ---------------------------------------------------------------------------
+// Fluid & Fire tick system
+// ---------------------------------------------------------------------------
+
+void World::scheduleBlockUpdate(int x, int y, int z, int delayTicks) {
+    // Hard queue cap — prevents unbounded memory growth when many fluid blocks exist.
+    static constexpr size_t MAX_QUEUE_SIZE = 100000;
+    if (m_updateQueue.size() >= MAX_QUEUE_SIZE) return;
+
+    uint64_t key = getBlockKey(x, y, z);
+    if (m_scheduledSet.count(key)) return; // Already queued — drop duplicate
+    m_scheduledSet.insert(key);
+    m_updateQueue.push_back({x, y, z, delayTicks});
+}
+
+// Place a fluid block at (x,y,z) with a given flow level (0=source, 1-7=flowing).
+// setFluidBlock bypasses the auto-scheduling in setBlock (we manage scheduling
+// explicitly in processFluidUpdate) by writing directly to chunk then updating level.
+void World::setFluidBlock(int x, int y, int z, uint8_t fluidType, int level, int delay) {
+    // Write the block type
+    int cx = (int)std::floor((float)x / Chunk::SizeX);
+    int cz = (int)std::floor((float)z / Chunk::SizeZ);
+    uint64_t ckey = getChunkKey(cx, cz);
+    auto it = m_chunks.find(ckey);
+    if (it == m_chunks.end()) return;
+
+    int lx = x - cx * Chunk::SizeX;
+    int lz = z - cz * Chunk::SizeZ;
+    if (lx < 0 || lx >= Chunk::SizeX || lz < 0 || lz >= Chunk::SizeZ ||
+        y < 0 || y >= Chunk::SizeY) return;
+
+    it->second->chunk->set(lx, y, lz, fluidType);
+    it->second->dirty = true;
+
+    // Mark edge neighbours dirty
+    if (lx == 0) { auto n = m_chunks.find(getChunkKey(cx-1, cz)); if (n != m_chunks.end()) n->second->dirty = true; }
+    if (lx == Chunk::SizeX-1) { auto n = m_chunks.find(getChunkKey(cx+1, cz)); if (n != m_chunks.end()) n->second->dirty = true; }
+    if (lz == 0) { auto n = m_chunks.find(getChunkKey(cx, cz-1)); if (n != m_chunks.end()) n->second->dirty = true; }
+    if (lz == Chunk::SizeZ-1) { auto n = m_chunks.find(getChunkKey(cx, cz+1)); if (n != m_chunks.end()) n->second->dirty = true; }
+
+    // Update fluid level
+    uint64_t bkey = getBlockKey(x, y, z);
+    if (level <= 0) {
+        m_fluidLevels.erase(bkey);
+    } else {
+        m_fluidLevels[bkey] = static_cast<uint8_t>(level);
+    }
+
+    // Schedule tick for the new fluid block
+    int effectiveDelay = (delay >= 0) ? delay
+                       : ((fluidType == BLOCK_LAVA) ? LAVA_TICK_DELAY : WATER_TICK_DELAY);
+    scheduleBlockUpdate(x, y, z, effectiveDelay);
+}
+
+// Returns true if a fluid-vs-fluid interaction occurred and caller should not
+// place the fluid at (x,y,z).
+bool World::applyFluidInteraction(int x, int y, int z, bool placingWater) {
+    uint8_t cur = getBlock(x, y, z);
+
+    if (placingWater) {
+        if (blockIsLava(cur)) {
+            if (getFluidLevel(x, y, z) == 0) {
+                // Water flows into lava source → Obsidian
+                setBlock(x, y, z, BLOCK_OBSIDIAN);
+            } else {
+                // Water flows into flowing lava → Cobblestone
+                setBlock(x, y, z, BLOCK_COBBLESTONE);
+            }
+            return true;
+        }
+    } else {
+        if (blockIsWater(cur)) {
+            // Lava flows into any water → Stone
+            setBlock(x, y, z, BLOCK_STONE);
+            return true;
+        }
+    }
+    return false;
+}
+
+void World::processFluidUpdate(int x, int y, int z, bool isLavaType) {
+    uint8_t block = getBlock(x, y, z);
+
+    // Abort if the block was already replaced by something else
+    if (isLavaType) {
+        if (!blockIsLava(block)) return;
+    } else {
+        if (!blockIsWater(block)) return;
+    }
+
+    const int level    = getFluidLevel(x, y, z);
+    const int maxLevel = isLavaType ? 4 : 7;  // Lava: 4 levels (Minecraft overworld), Water: 7
+    const int baseDelay = isLavaType ? LAVA_TICK_DELAY : WATER_TICK_DELAY;
+
+    const int dx[] = {1, -1, 0, 0};
+    const int dz[] = {0, 0, 1, -1};
+    const uint8_t fluidType = isLavaType ? BLOCK_LAVA : BLOCK_WATER;
+
+    // ------------------------------------------------------------------
+    // 1. Gravity — check block directly below first
+    // ------------------------------------------------------------------
+    if (y > 0) {
+        uint8_t below = getBlock(x, y - 1, z);
+        // Only treat as an active gravity step if below can actually receive more
+        // fluid.  If below is already the same fluid at same-or-lower level it is
+        // "full" — fall through to horizontal spread instead of looping forever.
+        // Falling fluid is level 8. Source is level 0.
+        bool isSameFluid = (below == fluidType);
+        bool belowAlreadyFull = isSameFluid && (getFluidLevel(x, y - 1, z) == 0 || getFluidLevel(x, y - 1, z) == 8);
+        if (blockIsReplaceable(below) && !belowAlreadyFull) {
+            if (!applyFluidInteraction(x, y - 1, z, !isLavaType)) {
+                setFluidBlock(x, y - 1, z, fluidType, 8, baseDelay); // 8 = falling
+            }
+            // In Minecraft, if water can flow down, it DOES NOT flow horizontally!
+            return;
+        }
+    }
+
+    // Guard: a source block directly above falling water (level 8) has a
+    // fall column still forming below.  Don't spread sideways yet — water
+    // placed in air should fall straight down first, then spread once settled.
+    // Cliff-edge sources are unaffected: their y-1 is solid stone, not water.
+    if (!isLavaType && level == 0 && y > 0) {
+        uint8_t belowBlk = getBlock(x, y - 1, z);
+        if (blockIsWater(belowBlk) && getFluidLevel(x, y - 1, z) == 8) {
+            scheduleBlockUpdate(x, y, z, WATER_TICK_DELAY);
+            return;
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // 2. Minecraft "descent check" — before spreading horizontally, find
+    //    which directions lead to a downward gap within the next block.
+    //    If ANY direction leads down, spread ONLY toward those directions.
+    //    This replicates the Minecraft behavior where water rushes toward
+    //    holes and cliff edges instead of spreading equally in all directions.
+    // ------------------------------------------------------------------
+    bool canDescend[4] = {false, false, false, false};
+    bool anyCanDescend = false;
+    if (y > 0 && (level < maxLevel || level == 8)) {
+        for (int i = 0; i < 4; i++) {
+            const int nx = x + dx[i], nz = z + dz[i];
+            if (!blockIsReplaceable(getBlock(nx, y, nz))) continue;
+            if (blockIsReplaceable(getBlock(nx, y - 1, nz))) {
+                canDescend[i] = true;
+                anyCanDescend = true;
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // 3. Horizontal spread — stagger each direction by a fixed offset so
+    //    all 4 neighbours don't activate simultaneously (prevents waves).
+    //    Water: directions fire at baseDelay + 0,3,6,9 ticks.
+    //    Level-based scaling: each level further from the source adds 1
+    //    extra tick so water "slows" naturally as it spreads further.
+    // ------------------------------------------------------------------
+    if (level < maxLevel || level == 8) {
+        int newLevel = (level == 8) ? 1 : level + 1;
+        // Water stagger: fixed 3-tick gap so directions are distinctly
+        // separated (was baseDelay/4 = 1 — too tight, caused wave flooding).
+        // Lava stagger: baseDelay/5 to keep it slow but sequential.
+        const int stagger = isLavaType ? (baseDelay / 5) : 3;
+        // Level scaling: deeper levels (further from source) spread slightly
+        // slower — simulates natural flow attenuation.
+        const int levelPenalty = (newLevel > 3) ? (newLevel - 3) : 0;
+
+        for (int i = 0; i < 4; i++) {
+            // Descent filter: if any neighbour leads downward, ONLY flow toward
+            // those neighbours. This makes fluid rush to holes/edges first,
+            // exactly like Minecraft's horizontal-flow behaviour.
+            if (anyCanDescend && !canDescend[i]) continue;
+
+            int nx = x + dx[i], nz = z + dz[i];
+            uint8_t neighbor = getBlock(nx, y, nz);
+
+            // State check: only spread if the neighbour is worse (higher level)
+            // If it's a different fluid, we must attempt to spread so interaction (e.g. cobblestone) occurs.
+            bool isSameFluidNeighbor = (neighbor == fluidType);
+            int neighborLevel = isSameFluidNeighbor ? getFluidLevel(nx, y, nz) : 9;
+            if (newLevel >= neighborLevel) continue;
+
+            if (blockIsReplaceable(neighbor)) {
+                if (!applyFluidInteraction(nx, y, nz, !isLavaType)) {
+                    // Each direction gets a distinctly staggered delay + level attenuation
+                    int neighborDelay = baseDelay + i * stagger + levelPenalty;
+                    setFluidBlock(nx, y, nz, fluidType, newLevel, neighborDelay);
+                }
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // 4. Source-block creation (water only — "infinite water" mechanic)
+    // ------------------------------------------------------------------
+    if (!isLavaType && level > 0) {
+        uint8_t belowCheck = (y > 0) ? getBlock(x, y - 1, z) : BLOCK_BEDROCK;
+        if (!blockIsReplaceable(belowCheck)) {
+            int srcCount = 0;
+            for (int i = 0; i < 4; i++) {
+                uint8_t nb = getBlock(x + dx[i], y, z + dz[i]);
+                if (nb == BLOCK_WATER && getFluidLevel(x + dx[i], y, z + dz[i]) == 0)
+                    srcCount++;
+            }
+            if (srcCount >= 2) {
+                m_fluidLevels.erase(getBlockKey(x, y, z));
+                scheduleBlockUpdate(x, y, z, WATER_TICK_DELAY);
+                return;
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // 5. Evaporation — remove flowing blocks no longer fed by a source
+    // ------------------------------------------------------------------
+    if (level > 0) {
+        bool fed = false;
+        for (int i = 0; i < 4; i++) {
+            uint8_t nb = getBlock(x + dx[i], y, z + dz[i]);
+            bool sameFluid = isLavaType ? blockIsLava(nb) : blockIsWater(nb);
+            if (sameFluid && getFluidLevel(x + dx[i], y, z + dz[i]) < level) {
+                fed = true; break;
+            }
+        }
+        if (!fed && y + 1 < Chunk::SizeY) {
+            uint8_t above = getBlock(x, y + 1, z);
+            if (isLavaType ? blockIsLava(above) : blockIsWater(above)) fed = true;
+        }
+        if (!fed) {
+            setBlock(x, y, z, BLOCK_AIR);
+        }
+    }
+}
+
+void World::processFireUpdate(int x, int y, int z, bool isRaining) {
+    if (getBlock(x, y, z) != BLOCK_FIRE) return;
+
+    uint64_t key = getBlockKey(x, y, z);
+
+    if (isRaining) {
+        setBlock(x, y, z, BLOCK_AIR);
+        m_fireAge.erase(key);
+        return;
+    }
+
+    const int dx[] = {1, -1, 0, 0, 0, 0};
+    const int dy[] = {0, 0, 0, 0, 1, -1};
+    const int dz[] = {0, 0, 1, -1, 0, 0};
+
+    // Water adjacency extinguishes fire
+    for (int i = 0; i < 6; i++) {
+        if (blockIsWater(getBlock(x + dx[i], y + dy[i], z + dz[i]))) {
+            setBlock(x, y, z, BLOCK_AIR);
+            m_fireAge.erase(key);
+            return;
+        }
+    }
+
+    uint8_t age = m_fireAge.count(key) ? m_fireAge.at(key) : 0;
+    m_fireAge[key] = ++age;
+
+    bool hasFlammable = false;
+    for (int i = 0; i < 6; i++) {
+        if (blockIsFlammable(getBlock(x + dx[i], y + dy[i], z + dz[i]))) {
+            hasFlammable = true; break;
+        }
+    }
+
+    if (!hasFlammable || age > 15) {
+        setBlock(x, y, z, BLOCK_AIR);
+        m_fireAge.erase(key);
+        return;
+    }
+
+    std::uniform_int_distribution<int> roll(0, 99);
+
+    // Burn adjacent fuel blocks
+    for (int i = 0; i < 6; i++) {
+        int nx = x + dx[i], ny = y + dy[i], nz = z + dz[i];
+        uint8_t nb = getBlock(nx, ny, nz);
+        if (blockBurnRate(nb) > 0 && roll(m_rng) < blockBurnRate(nb)) {
+            setBlock(nx, ny, nz, BLOCK_AIR);
+        }
+    }
+
+    // Spread fire into nearby air blocks adjacent to flammable blocks (3x3x4 box)
+    for (int sy = 0; sy <= 3; sy++) {
+        for (int sx = -1; sx <= 1; sx++) {
+            for (int sz = -1; sz <= 1; sz++) {
+                int cx = x + sx, cy = y + sy, cz = z + sz;
+                if (getBlock(cx, cy, cz) != BLOCK_AIR) continue;
+                for (int i = 0; i < 6; i++) {
+                    int flam = blockFlammability(getBlock(cx + dx[i], cy + dy[i], cz + dz[i]));
+                    if (flam > 0 && roll(m_rng) < flam / 4) {
+                        setBlock(cx, cy, cz, BLOCK_FIRE);
+                        scheduleBlockUpdate(cx, cy, cz, FIRE_TICK_DELAY);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    // Reschedule self
+    scheduleBlockUpdate(x, y, z, FIRE_TICK_DELAY);
+}
+
+void World::tick(bool isRaining) {
+    m_tickCounter++;
+
+    // Age all queued updates; collect ready ones
+    std::vector<ScheduledUpdate> ready;
+    std::deque<ScheduledUpdate>  remaining;
+    ready.reserve(m_updateQueue.size());
+
+    for (auto& upd : m_updateQueue) {
+        if (--upd.delayTicks <= 0) {
+            m_scheduledSet.erase(getBlockKey(upd.x, upd.y, upd.z));
+            ready.push_back(upd);
+        } else {
+            remaining.push_back(upd);
+        }
+    }
+    m_updateQueue = std::move(remaining);
+
+    // Time-slice: process up to MAX_FLUID_UPDATES_PER_TICK ready items
+    int processed = 0;
+    for (auto& upd : ready) {
+        if (processed >= MAX_FLUID_UPDATES_PER_TICK) {
+            // Defer to the next tick to maintain FPS while clearing the backlog as fast as possible.
+            scheduleBlockUpdate(upd.x, upd.y, upd.z, 1);
+            continue;
+        }
+        uint8_t block = getBlock(upd.x, upd.y, upd.z);
+        if (blockIsWater(block)) {
+            processFluidUpdate(upd.x, upd.y, upd.z, false);
+        } else if (blockIsLava(block)) {
+            processFluidUpdate(upd.x, upd.y, upd.z, true);
+        } else if (block == BLOCK_FIRE) {
+            processFireUpdate(upd.x, upd.y, upd.z, isRaining);
+        }
+        processed++;
+    }
+
+    // Random block ticks (ambient fire spread)
+    if (!m_chunks.empty()) {
+        const int RANDOM_TICKS = 3;
+        std::uniform_int_distribution<size_t> chunkDist(0, m_chunks.size() - 1);
+        std::uniform_int_distribution<int>    xDist(0, Chunk::SizeX - 1);
+        std::uniform_int_distribution<int>    yDist(0, Chunk::SizeY - 1);
+        std::uniform_int_distribution<int>    zDist(0, Chunk::SizeZ - 1);
+
+        for (int i = 0; i < RANDOM_TICKS; i++) {
+            auto it = m_chunks.begin();
+            std::advance(it, chunkDist(m_rng));
+            if (it == m_chunks.end()) continue;
+            int lx = xDist(m_rng), ly = yDist(m_rng), lz = zDist(m_rng);
+            if (it->second->chunk->get(lx, ly, lz) == BLOCK_FIRE) {
+                int wx = it->second->x * Chunk::SizeX + lx;
+                int wz = it->second->z * Chunk::SizeZ + lz;
+                processFireUpdate(wx, ly, wz, isRaining);
+            }
+        }
+    }
 }

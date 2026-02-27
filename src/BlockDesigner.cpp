@@ -1,4 +1,4 @@
-#include "BlockDesigner.hpp"
+﻿#include "BlockDesigner.hpp"
 #include "Registry.hpp"
 #include "Framebuffer.hpp"
 #include "Shader.hpp"
@@ -18,7 +18,9 @@
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
+#ifndef NOMINMAX
 #define NOMINMAX
+#endif
 #include <windows.h>
 #include <commdlg.h>
 
@@ -47,6 +49,8 @@ namespace { std::string openFileDialog() { return ""; } }
 
 void BlockDesigner::show(bool* open, unsigned int atlasID, Framebuffer* previewBuffer, Shader* previewShader) {
     if (!*open) return;
+    ImVec2 mvCenter = ImGui::GetMainViewport()->GetCenter();
+    ImGui::SetNextWindowPos(mvCenter, ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSize(ImVec2(1150, 750), ImGuiCond_FirstUseEver);
 
     // Intercept close: if dirty, show save prompt instead

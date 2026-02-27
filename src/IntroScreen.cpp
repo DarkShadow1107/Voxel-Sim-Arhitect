@@ -878,7 +878,7 @@ void IntroScreen::render() {
 
         // Version text - more prominent with shadow and underline
         {
-            const char* version = "Beta v0.2";
+            const char* version = "Beta v0.6";
             ImFont* font = ImGui::GetFont();
             float versionFontSize = 16.0f;
             float defaultFontSize = ImGui::GetFontSize();

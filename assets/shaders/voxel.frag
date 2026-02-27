@@ -32,17 +32,41 @@ void main() {
     bool isCherryLeaf = (tileBase.x == 7.0 && tileBase.y == 1.0);
     bool isGlass = (tileBase.x == 14.0 && tileBase.y == 0.0);
     bool isLeaves = (tileBase.x == 7.0 && tileBase.y == 0.0) || isCherryLeaf || (tileBase.x == 5.0 && tileBase.y == 1.0);
+    bool isFire  = (tileBase.x == 8.0 && tileBase.y == 4.0);
 
-    // Water: gentle scrolling animation (Minecraft-style)
+    // Water: two-layer scroll (primary + perpendicular interference for natural surface movement)
     if (isWater) {
         float t = uTime * 0.4;
         tileFract += vec2(t * 0.03, t * 0.02);
+        // Secondary perpendicular ripple layer creates interference pattern
+        float ripple = sin(uTime * 0.9 + tileFract.y * 6.0) * 0.008
+                     + cos(uTime * 0.6 + tileFract.x * 5.0) * 0.006;
+        tileFract += vec2(ripple, -ripple * 0.8);
     }
 
-    // Lava: slow flow
+    // Lava: multi-layer flowing animation (Minecraft-like viscous lava)
     if (isLava) {
-        float speed = uTime * 0.08;
-        tileFract += vec2(speed * 0.05, speed * 0.03);
+        float t = uTime * 0.07; // Very slow base flow speed (viscous lava)
+        // Layer 1: large slow flow
+        vec2 flow1 = vec2(sin(t * 0.8 + tileFract.y * 2.0) * 0.04, t * 0.025);
+        // Layer 2: smaller faster swirl
+        vec2 flow2 = vec2(cos(t * 1.3 + tileFract.x * 3.0) * 0.02, t * 0.018 + sin(t*0.5)*0.01);
+        // Layer 3: bubble/cracking movement
+        vec2 flow3 = vec2(sin(t * 2.1 + vWorldPos.x * 0.7) * 0.015, cos(t * 1.7 + vWorldPos.z * 0.5) * 0.015);
+        tileFract += flow1 + flow2 * 0.6 + flow3 * 0.4;
+    }
+
+    // Fire: multi-speed upward scroll with turbulent sway
+    if (isFire) {
+        float ft = uTime * 2.2;
+        // Primary upward scroll
+        float scrollY = -ft * 0.10;
+        // Turbulent horizontal sway (multiple frequencies)
+        float swayX = sin(ft * 0.7 + vWorldPos.y * 3.0 + vWorldPos.x) * 0.05
+                    + sin(ft * 1.3 + vWorldPos.z * 2.5) * 0.03;
+        // Secondary bulge effect
+        float bulge = cos(ft * 0.5 + tileFract.y * 6.28) * 0.02;
+        tileFract += vec2(swayX + bulge, scrollY);
     }
 
     // Wrap UVs within the tile
@@ -89,20 +113,41 @@ void main() {
         lighting *= mix(0.85, 1.0, clamp(vWorldPos.y / 30.0, 0.0, 1.0));
     }
 
+    // --- Fake SSAO / Edge Darkening using derivatives ---
+    // This gives a nice cel-shaded/voxel pop effect
+    vec3 dpdx = dFdx(vWorldPos);
+    vec3 dpdy = dFdy(vWorldPos);
+    vec3 crossDeriv = cross(dpdx, dpdy);
+    float edgeFactor = length(crossDeriv);
+    // Darken edges slightly
+    lighting *= mix(1.0, 0.75, clamp(edgeFactor * 0.5, 0.0, 1.0));
+
     // Water rendering
     float alphaOut = texColor.a;
     vec3 emissive = vec3(0.0);
 
     if (isWater) {
         // Minecraft water: uniform blue tint, semi-transparent
-        texColor.rgb = mix(texColor.rgb, vec3(0.15, 0.35, 0.75), 0.6);
-        alphaOut = 0.65;
+        texColor.rgb = mix(texColor.rgb, vec3(0.1, 0.3, 0.8), 0.8);
+        alphaOut = 0.8;
 
-        // Subtle specular on water surface (top face only)
+        // Enhanced specular on water surface (top face only)
         if (n.y > 0.5) {
             vec3 halfDir = normalize(l + viewDir);
             float spec = pow(max(dot(n, halfDir), 0.0), 128.0);
-            emissive += vec3(1.0, 0.98, 0.95) * spec * 0.6 * nightFactor;
+            emissive += vec3(1.0, 0.98, 0.95) * spec * 0.8 * nightFactor;
+
+            // Add subtle reflection from the sky
+            float fresnel = pow(1.0 - max(dot(viewDir, n), 0.0), 4.0);
+            vec3 skyReflectColor = vec3(0.4, 0.6, 0.9) * nightFactor;
+            emissive += skyReflectColor * fresnel * 0.5;
+
+            // Caustic shimmer: animated bright patches on water surface
+            vec2 causticUV = vWorldPos.xz * 0.4;
+            float caustic = 0.5 + 0.5 * sin(uTime * 1.2 + causticUV.x * 2.3 + causticUV.y * 1.7)
+                          * sin(uTime * 0.9 + causticUV.x * 1.5 - causticUV.y * 2.1);
+            caustic = pow(max(caustic, 0.0), 3.0);
+            emissive += vec3(0.6, 0.75, 1.0) * caustic * 0.15 * nightFactor;
         }
     }
 
@@ -123,30 +168,122 @@ void main() {
         emissive += vec3(0.6) * spec * 0.3;
     }
 
-    // Lava: emissive glow
+    // Lava: full-bright emissive with multi-layer realistic look
     if (isLava) {
-        float pulse = 0.85 + 0.15 * sin(uTime * 2.0);
-        emissive += vec3(1.0, 0.4, 0.05) * 1.5 * pulse;
-        emissive += vec3(1.0, 0.7, 0.0) * 0.3;
+        lighting = 1.0; // No shadows on lava
+
+        // Use float time for animated color blending
+        float lt = uTime;
+
+        // Per-position hash for unique variation per block
+        float hash = fract(sin(dot(floor(vWorldPos.xz), vec2(127.1, 311.7))) * 43758.5453);
+
+        // Layer 1: bright molten core (hot yellow-orange)
+        float coreNoise  = fract(sin(dot(tileFract * 4.0, vec2(12.9898, 78.233))) * 43758.5) * 0.5 + 0.5;
+        // Layer 2: crust darkening (cooler patches simulating solidifying crust)
+        float crustNoise = fract(sin(dot(tileFract * 8.0 + vec2(lt*0.03), vec2(93.9898, 67.345))) * 53231.1) * 0.5 + 0.5;
+        // Layer 3: slow large-scale brightness waves
+        float waveNoise  = 0.75 + 0.25 * sin(lt * 1.2 + vWorldPos.x * 0.3 + vWorldPos.z * 0.4 + hash * 6.28);
+
+        // Lava color layers:
+        // Bright molten zones = yellow-white
+        // Normal zones = orange
+        // Crust zones = deep red-brown
+        vec3 lavaHot    = vec3(1.00, 0.85, 0.20); // Yellow-white molten
+        vec3 lavaMid    = vec3(1.00, 0.40, 0.02); // Bright orange
+        vec3 lavaCool   = vec3(0.55, 0.10, 0.00); // Dark red crust
+        vec3 lavaBlack  = vec3(0.20, 0.06, 0.01); // Very dark solidifying
+
+        // Texture grayscale used to pick color from gradient
+        float gray = dot(texColor.rgb, vec3(0.299, 0.587, 0.114));
+
+        // Build crust pattern: use crustNoise to determine how "cool" a spot is
+        float crustFactor = smoothstep(0.55, 0.80, crustNoise);
+        // Core factor: bright spots
+        float coreFactor  = smoothstep(0.50, 0.85, gray * coreNoise * waveNoise);
+
+        vec3 lavaColor = mix(lavaCool, lavaMid, gray * 1.5); // Base warm gradient
+        lavaColor = mix(lavaColor, lavaHot, coreFactor);    // Add bright hotspots
+        lavaColor = mix(lavaColor, lavaBlack, crustFactor * 0.6); // Add crust darkening
+
+        texColor.rgb = lavaColor;
+
+        // Pulsating glow: fast small flicker + slow large wave
+        float fastFlicker = 0.92 + 0.08 * sin(lt * 6.0 + hash * 12.0);
+        float slowPulse   = 0.88 + 0.12 * sin(lt * 1.5 + vWorldPos.x * 0.2 + vWorldPos.z * 0.3);
+        float emissivePow = fastFlicker * slowPulse;
+
+        // Brighter emissive on hot parts
+        emissive += lavaColor * 1.6 * emissivePow;
+        // Extra glow on the hottest zones
+        emissive += vec3(1.0, 0.7, 0.1) * coreFactor * 1.2 * emissivePow;
+
+        // Surface vent highlights on the top face: bright rising-bubble sparks
+        if (n.y > 0.5) {
+            float ventHash = fract(sin(dot(floor(vWorldPos.xz * 2.0), vec2(127.1, 311.7))) * 43758.5453);
+            float ventPulse = ventHash > 0.82
+                ? max(0.0, sin(lt * (3.0 + ventHash * 5.0) + ventHash * 6.28)) * 0.35
+                : 0.0;
+            emissive += vec3(1.0, 0.6, 0.1) * ventPulse;
+        }
+
         alphaOut = 1.0;
-        lighting = 1.0; // Lava is self-lit
     }
 
-    // Snow sparkle (very subtle)
+    // Fire: realistic flickering flames with color gradient
+    if (isFire) {
+        float ft = uTime;
+        // Multiple flicker frequencies for organic feel
+        float flicker1 = 0.70 + 0.30 * sin(ft * 9.0  + vWorldPos.x * 6.1 + vWorldPos.z * 4.7);
+        float flicker2 = 0.80 + 0.20 * sin(ft * 14.5 + vWorldPos.z * 8.3 + vWorldPos.y * 2.1);
+        float flicker3 = 0.85 + 0.15 * sin(ft * 5.5  + vWorldPos.x * 3.2);
+        float flicker  = flicker1 * flicker2 * flicker3;
+
+        // Vertical gradient: yellow at base, orange in middle, red-orange at top
+        // tileFract.y = 0 is bottom of fire, 1 is top
+        float heightGrad = clamp(tileFract.y, 0.0, 1.0);
+
+        vec3 fireBottom = vec3(1.00, 0.95, 0.30); // Bright yellow - hottest core
+        vec3 fireMid    = vec3(1.00, 0.55, 0.05); // Orange
+        vec3 fireTop    = vec3(0.85, 0.20, 0.00); // Red-orange - tips
+
+        vec3 fireColor = mix(fireBottom, fireMid, smoothstep(0.0, 0.45, heightGrad));
+        fireColor = mix(fireColor, fireTop, smoothstep(0.4, 0.85, heightGrad));
+
+        // Apply texture brightness variation
+        float texBright = dot(texColor.rgb, vec3(0.5, 0.4, 0.1));
+        fireColor *= (0.7 + texBright * 0.8);
+
+        texColor.rgb = fireColor;
+
+        // Emissive: very bright, warm glow
+        emissive += vec3(1.00, 0.60, 0.08) * 2.8 * flicker;         // Main warm glow
+        emissive += vec3(1.00, 0.90, 0.15) * 1.2 * flicker1;        // Bright yellow core
+        emissive += fireTop * 0.6 * flicker3;                         // Red edge contribution
+
+        // Alpha: quadratic fade — dense base, wispy tips for realistic flame volume
+        float baseAlpha = 1.0 - heightGrad * heightGrad * 0.72;
+        alphaOut = baseAlpha * flicker1 * 0.95;
+        lighting = 1.0;
+    }
+
+    // Snow sparkle (subtle Minecraft-like)
     if (isSnow && n.y > 0.5) {
-        float sparkle = fract(sin(dot(floor(vWorldPos.xz * 8.0), vec2(12.9898, 78.233))) * 43758.5453);
-        if (sparkle > 0.97) {
-            emissive += vec3(0.3) * nightFactor;
+        vec2 floorPos  = floor(vWorldPos.xz * 16.0);
+        float sparkle = fract(sin(dot(floorPos, vec2(12.9898, 78.233))) * 43758.5453);
+        if (sparkle > 0.98) {
+            emissive += vec3(0.15, 0.15, 0.15) * nightFactor;
         }
+        // Make snow slightly brighter and cooler
+        texColor.rgb = mix(texColor.rgb, vec3(0.95, 0.98, 1.0), 0.3);
     }
 
     // Final color
     vec3 color = texColor.rgb * lighting + emissive;
 
-    // Snow: ensure bright white after lighting (min brightness 0.85)
+    // Snow: bright white
     if (isSnow) {
-        float snowBright = max(lighting, 0.85);
-        color = vec3(snowBright) + emissive;
+        color = texColor.rgb * lighting + emissive;
     }
 
     // Sun glow (subtle)
@@ -167,11 +304,10 @@ void main() {
     }
     color = mix(color, fogColor, fogFactor);
 
-    // Simple contrast boost (no tone mapping - keep colors vivid)
-    color = pow(color, vec3(1.05));
-
-    // Clamp to prevent overbright
-    color = clamp(color, 0.0, 1.0);
+    // Color grading & tone mapping (vivid, high contrast)
+    // ACES-like curve approximation for better highlights
+    color = (color * (2.51 * color + 0.03)) / (color * (2.43 * color + 0.59) + 0.14);
 
     FragColor = vec4(color, alphaOut);
 }
+

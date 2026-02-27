@@ -1,4 +1,4 @@
-#include "SoundEditor.hpp"
+﻿#include "SoundEditor.hpp"
 #include "AudioManager.hpp"
 
 #include "imgui.h"
@@ -8,7 +8,9 @@
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
+#ifndef NOMINMAX
 #define NOMINMAX
+#endif
 #include <windows.h>
 #include <commdlg.h>
 
@@ -40,6 +42,8 @@ void SoundEditor::show(bool* open) {
 
     auto& am = AudioManager::getInstance();
 
+    ImVec2 mvCenter = ImGui::GetMainViewport()->GetCenter();
+    ImGui::SetNextWindowPos(mvCenter, ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSize(ImVec2(350, 450), ImGuiCond_FirstUseEver);
     if (ImGui::Begin("Sound Editor", open)) {
         ImGui::Text("Volume Mixers");

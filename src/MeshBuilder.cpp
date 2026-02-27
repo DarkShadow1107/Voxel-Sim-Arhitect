@@ -26,6 +26,16 @@ static void addVoxelFace(std::vector<Vertex>& out, const Chunk& chunk, int x, in
         b = def.faces[face].color.z;
         tx = def.faces[face].texX;
         ty = def.faces[face].texY;
+        
+        // Snowed grass logic
+        if (type == BLOCK_GRASS && (face == 0 || face == 1 || face == 4 || face == 5)) {
+            uint8_t blockAbove = chunk.get(x, y + 1, z);
+            if (blockAbove == BLOCK_SNOW || blockAbove == BLOCK_SNOW_LAYER) {
+                // Use snow texture and color for the sides
+                tx = 9; ty = 0;
+                r = 1.0f; g = 1.0f; b = 1.0f;
+            }
+        }
     } else {
         // Specific overrides for grass top (fallback if not using per-face)
         if (type == BLOCK_GRASS && face == 2) {
@@ -103,8 +113,12 @@ static void addVoxelFace(std::vector<Vertex>& out, const Chunk& chunk, int x, in
         float s = std::clamp(aoValues[i], 0.5f, 1.0f);
 
         static const float uvCoords[4][2] = { {0,0}, {1,0}, {1,1}, {0,1} };
-        float u = ((float)tx + uvCoords[i][0]) / 16.0f;
-        float v = ((float)ty + uvCoords[i][1]) / 16.0f;
+        // Half-texel inset: pull each UV 0.5 px inward from the tile edge so that
+        // mipmapping never samples into the adjacent tile — eliminates seam lines at distance.
+        // Atlas is 256 px wide; each tile is 16 px; 0.5 px in atlas UV = 0.5/256.
+        constexpr float kInset = 0.5f / 256.0f;
+        float u = ((float)tx + uvCoords[i][0]) / 16.0f + (uvCoords[i][0] < 0.5f ? kInset : -kInset);
+        float v = ((float)ty + uvCoords[i][1]) / 16.0f + (uvCoords[i][1] < 0.5f ? kInset : -kInset);
 
         out.push_back(Vertex{px, py, pz, nx, ny, nz, r * s, g * s, b * s, u, v});
     };

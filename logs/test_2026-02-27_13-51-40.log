@@ -1,0 +1,305 @@
+╔═══════════════════════════════════════════════════════════════╗
+║          Voxel-Sim Architect  —  Test Run Log                 ║
+╚═══════════════════════════════════════════════════════════════╝
+  Version  : Beta-Dev
+  Date     : 2026-02-27 13:51:40
+  Log file : C:/Users/Alexandru Gabriel/Desktop/GitHub/Voxel-Sim Arhitect/logs/test_2026-02-27_13-51-40.log
+───────────────────────────────────────────────────────────────
+
+  ✓  WorldGen: All 8 biomes appear across a wide world scan
+    │  tags     : [biome][worldgen]
+    │  assert   : 1 ok    duration : 0 ms
+
+  ✓  WorldGen: OCEAN biome appears in deep negative continental noise regions
+    │  tags     : [biome][worldgen]
+    │  assert   : 1 ok    duration : 0 ms
+
+  ✓  WorldGen: Plains biome generates significantly flatter terrain than Volcano
+    │  tags     : [biome][height][worldgen]
+    │  assert   : 5 ok    duration : 22 ms
+
+  ✓  WorldGen: All surface heights are within [1, SizeY-2]
+    │  tags     : [height][worldgen]
+    │  assert   : 10240 ok    duration : 67 ms
+
+  ✓  WorldGen: y=0 is always bedrock after any generation
+    │  tags     : [structure][worldgen]
+    │  assert   : 6400 ok    duration : 268 ms
+
+  ✓  WorldGen: Top rows (SizeY-1 and SizeY-2) are AIR for low baseHeight
+    │  tags     : [structure][worldgen]
+    │  assert   : 64 ok    duration : 9 ms
+
+  ✓  WorldGen: Underground zone is predominantly stone/ore, not air
+    │  tags     : [structure][worldgen]
+    │  assert   : 1 ok    duration : 12 ms
+
+  ✓  WorldGen: Diamond ore only appears below y=20
+    │  tags     : [ore][worldgen]
+    │  assert   : 1 ok    duration : 90 ms
+
+  ✓  WorldGen: Coal ore appears more frequently than diamond ore
+    │  tags     : [ore][worldgen]
+    │  assert   : 1 ok    duration : 12 ms
+
+  ✓  WorldGen: Caves create air in the underground zone y=[5..60]
+    │  tags     : [caves][worldgen]
+    │  assert   : 1 ok    duration : 48 ms
+
+  ✓  WorldGen: Cave water only appears at low y values (underground lakes)
+    │  tags     : [caves][worldgen]
+    │  assert   : 1 ok    duration : 12 ms
+
+  ✓  WorldGen: Water source blocks appear on high-terrain chunks
+    │  tags     : [waterfall][worldgen]
+    │  assert   : 1 ok    duration : 2.91 s
+
+  ✓  WorldGen: River channels exist as sub-seaLevel depressions in non-desert biomes
+    │  tags     : [river][worldgen]
+    │  assert   : 1 ok    duration : 1.08 s
+
+  ✓  WorldGen: No floating water appears above solid terrain in very high biomes
+    │  tags     : [biome][water][worldgen]
+    │  assert   : 1 ok    duration : 56 ms
+
+  ✓  Fluid: WATER_TICK_DELAY is within acceptable range
+    │  tags     : [constants][fluid]
+    │  assert   : 3 ok    duration : 0 ms
+
+  ✓  Fluid: Lava tick delay is significantly higher than water
+    │  tags     : [constants][fluid]
+    │  assert   : 1 ok    duration : 0 ms
+
+  ✓  Fluid: Ocean-biome chunk has no fluid updates scheduled at generation
+    │  tags     : [fluid][ocean][worldgen]
+    │  assert   : 3 ok    duration : 25 ms
+
+  ✓  Fluid: Non-ocean chunk with water-adjacent-to-air schedules fluid updates
+    │  tags     : [fluid][worldgen]
+    │  assert   : 1 ok    duration : 493 ms
+
+  ✓  Fluid: Chunk pool does not exhaust for 50 sequential alloc/free cycles
+    │  tags     : [fluid][memory][pool]
+    │  assert   : 50 ok    duration : 498 ms
+
+  ✓  Fluid: 30 simultaneous chunks can coexist without pool exhaustion
+    │  tags     : [fluid][memory][pool]
+    │  assert   : 33 ok    duration : 278 ms
+
+  ✓  Fluid: 10 chunk terrain+cave+water generation completes under 4 seconds
+    │  tags     : [fluid][performance]
+    │  assert   : 1 ok    duration : 84 ms
+
+  ✓  Fluid: Water blocks placed above ocean sea level are within bounds
+    │  tags     : [fluid][placement]
+    │  assert   : 20542 ok    duration : 80 ms
+
+  ✓  Fluid: Fluid update list entries reference valid local coordinates
+    │  tags     : [fluid][placement]
+    │  assert   : 595 ok    duration : 13 ms
+
+  ✓  Camera: Default position is (0, 10, 20)
+    │  tags     : [camera][init]
+    │  assert   : 3 ok    duration : 0 ms
+
+  ✓  Camera: Default FOV is 70 degrees
+    │  tags     : [camera][init]
+    │  assert   : 1 ok    duration : 0 ms
+
+  ✓  Camera: Default forward vector has unit length
+    │  tags     : [camera][init]
+    │  assert   : 1 ok    duration : 0 ms
+
+  ✓  Camera: Default right vector has unit length
+    │  tags     : [camera][init]
+    │  assert   : 1 ok    duration : 0 ms
+
+  ✓  Camera: Forward and right are perpendicular
+    │  tags     : [camera][init]
+    │  assert   : 1 ok    duration : 0 ms
+
+  ✓  Camera: Pitch clamps to +89 degrees at the top
+    │  tags     : [camera][pitch]
+    │  assert   : 1 ok    duration : 0 ms
+
+  ✓  Camera: Pitch clamps to -89 degrees at the bottom
+    │  tags     : [camera][pitch]
+    │  assert   : 1 ok    duration : 0 ms
+
+  ✓  Camera: Pitch accumulates correctly within safe range
+    │  tags     : [camera][pitch]
+    │  assert   : 2 ok    duration : 0 ms
+
+  ✓  Camera: Pitch clamping keeps forward Y component in valid range
+    │  tags     : [camera][pitch]
+    │  assert   : 4 ok    duration : 0 ms
+
+  ✓  Camera: Yaw 0 degrees points along +X axis (pitch=0)
+    │  tags     : [camera][yaw]
+    │  assert   : 3 ok    duration : 0 ms
+
+  ✓  Camera: Yaw 90 degrees points along +Z axis (pitch=0)
+    │  tags     : [camera][yaw]
+    │  assert   : 3 ok    duration : 0 ms
+
+  ✓  Camera: Yaw 180 degrees points along -X axis (pitch=0)
+    │  tags     : [camera][yaw]
+    │  assert   : 3 ok    duration : 0 ms
+
+  ✓  Camera: Pitch 90 degrees points straight up
+    │  tags     : [camera][yaw]
+    │  assert   : 1 ok    duration : 0 ms
+
+  ✓  Camera: Yaw accumulates addYawPitch
+    │  tags     : [camera][yaw]
+    │  assert   : 2 ok    duration : 0 ms
+
+  ✓  Camera: moveLocal forward moves along forward vector
+    │  tags     : [camera][movement]
+    │  assert   : 3 ok    duration : 0 ms
+
+  ✓  Camera: moveLocal right-strafe is perpendicular to forward
+    │  tags     : [camera][movement]
+    │  assert   : 2 ok    duration : 0 ms
+
+  ✓  Camera: moveLocal up moves along world Y
+    │  tags     : [camera][movement]
+    │  assert   : 1 ok    duration : 0 ms
+
+  ✓  Camera: moveLocal combination produces expected position
+    │  tags     : [camera][movement]
+    │  assert   : 2 ok    duration : 0 ms
+
+  ✓  Camera: viewMatrix is deterministic for same state
+    │  tags     : [camera][matrix]
+    │  assert   : 16 ok    duration : 0 ms
+
+  ✓  Camera: viewMatrix changes when position changes
+    │  tags     : [camera][matrix]
+    │  assert   : 1 ok    duration : 0 ms
+
+  ✓  Camera: viewMatrix changes when orientation changes
+    │  tags     : [camera][matrix]
+    │  assert   : 1 ok    duration : 0 ms
+
+  ✓  Camera: projectionMatrix changes when FOV changes
+    │  tags     : [camera][matrix]
+    │  assert   : 1 ok    duration : 0 ms
+
+  ✓  Camera: projectionMatrix has correct perspective divide element
+    │  tags     : [camera][matrix]
+    │  assert   : 2 ok    duration : 0 ms
+
+  ✓  Camera: projectionMatrix aspect ratio scales X element
+    │  tags     : [camera][matrix]
+    │  assert   : 1 ok    duration : 0 ms
+
+  ✓  Camera: setFovDegrees round-trips correctly
+    │  tags     : [camera][matrix]
+    │  assert   : 2 ok    duration : 0 ms
+
+  ✓  Chunk: Default-constructed chunk is entirely AIR
+    │  tags     : [chunk][init]
+    │  assert   : 6 ok    duration : 0 ms
+
+  ✓  Chunk: getData() returns non-null pointer with correct capacity
+    │  tags     : [chunk][init]
+    │  assert   : 2 ok    duration : 0 ms
+
+  ✓  Chunk: set and get round-trip all block types
+    │  tags     : [chunk][setget]
+    │  assert   : 10 ok    duration : 0 ms
+
+  ✓  Chunk: Overwrite voxel updates correctly
+    │  tags     : [chunk][setget]
+    │  assert   : 3 ok    duration : 0 ms
+
+  ✓  Chunk: All 16x16 surface cells can be set and retrieved
+    │  tags     : [chunk][setget]
+    │  assert   : 1025 ok    duration : 1 ms
+
+  ✓  Chunk: Out-of-bounds access returns AIR, not UB
+    │  tags     : [bounds][chunk]
+    │  assert   : 14 ok    duration : 0 ms
+
+  ✓  Chunk: Out-of-bounds set is silently ignored
+    │  tags     : [bounds][chunk]
+    │  assert   : 6 ok    duration : 0 ms
+
+  ✓  Chunk: Bedrock layer at y=0 after generation
+    │  tags     : [chunk][generation]
+    │  assert   : 64 ok    duration : 17 ms
+
+  ✓  Chunk: Top atmosphere rows are AIR after generation
+    │  tags     : [chunk][generation]
+    │  assert   : 3 ok    duration : 5 ms
+
+  ✓  Chunk: Generated terrain has non-zero solid voxel count
+    │  tags     : [chunk][generation]
+    │  assert   : 1 ok    duration : 19 ms
+
+  ✓  Chunk: Different seeds produce different terrain
+    │  tags     : [chunk][generation]
+    │  assert   : 1 ok    duration : 40 ms
+
+  ✓  Chunk: Terrain structural invariants hold after generation
+    │  tags     : [chunk][generation]
+    │  assert   : 2051 ok    duration : 57 ms
+
+  ✓  Chunk: getBiomeAt() always returns a valid BiomeType
+    │  tags     : [biome][chunk]
+    │  assert   : 98 ok    duration : 0 ms
+
+  ✓  Chunk: Distinct biome seeds produce distinct biome distributions
+    │  tags     : [biome][chunk]
+    │  assert   : 2 ok    duration : 0 ms
+
+  ✓  Registry: Air Block Defs
+    │  tags     : [registry]
+    │  assert   : 5 ok    duration : 1 ms
+
+  ✓  Registry: Dirt Block Defs
+    │  tags     : [registry]
+    │  assert   : 4 ok    duration : 0 ms
+
+  ✓  Registry: Water Block Defs
+    │  tags     : [registry]
+    │  assert   : 2 ok    duration : 0 ms
+
+  ✓  Registry: Out of Bounds Block Defs
+    │  tags     : [registry]
+    │  assert   : 5 ok    duration : 2 ms
+
+  ✓  Registry: Mob Defaults
+    │  tags     : [registry]
+    │  assert   : 4 ok    duration : 0 ms
+
+  ✓  Registry: Tool Retrieval
+    │  tags     : [registry]
+    │  assert   : 6 ok    duration : 0 ms
+
+  ✓  Registry: Dynamic Registration Override
+    │  tags     : [registry]
+    │  assert   : 3 ok    duration : 1 ms
+
+  ✓  Registry: Block Drops Logic
+    │  tags     : [registry]
+    │  assert   : 3 ok    duration : 0 ms
+
+  ✓  Registry: Hardness/Blast Resistance
+    │  tags     : [registry]
+    │  assert   : 4 ok    duration : 0 ms
+
+  ✓  Registry: Light Emission
+    │  tags     : [registry]
+    │  assert   : 1 ok    duration : 0 ms
+
+  ✓  TaskScheduler: Single task executes exactly once
+    │  tags     : [basic][scheduler]
+    │  assert   : 1 ok    duration : 1 ms
+
+  ✓  TaskScheduler: wait() on empty scheduler returns immediately
+    │  tags     : [basic][scheduler]
+    │  assert   : 1 ok    duration : 0 ms
+
+  ✓  TaskScheduler: All N tasks complete via atomic counter

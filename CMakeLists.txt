@@ -114,3 +114,15 @@ if(WIN32)
 endif()
 
 message(STATUS "Voxel-Sim Architect project configured with FetchContent.")
+
+# --- Testing with Catch2 ---
+enable_testing()
+
+FetchContent_Declare(
+    Catch2
+    GIT_REPOSITORY https://github.com/catchorg/Catch2.git
+    GIT_TAG        v3.4.0
+)
+FetchContent_MakeAvailable(Catch2)
+
+add_subdirectory(tests)

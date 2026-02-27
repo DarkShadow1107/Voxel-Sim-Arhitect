@@ -442,11 +442,14 @@ bool Texture::generateAtlas() {
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, atlasSize, atlasSize, 0, GL_RGBA, GL_UNSIGNED_BYTE, data.data());
 
     glGenerateMipmap(GL_TEXTURE_2D);
+    // GL_NEAREST_MIPMAP_LINEAR: pixel-perfect within each mip level (NEAREST),
+    // smooth blend between LOD levels (LINEAR) — prevents harsh concentric banding.
+    // The half-texel UV inset in MeshBuilder keeps tile-edge bleed under control.
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_LOD_BIAS, -0.5f);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_LOD_BIAS, -0.5f); // bias toward sharper mip
 
     return true;
 }

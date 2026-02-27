@@ -10,7 +10,9 @@
 				"${workspaceFolder}/build/_deps/imgui-src/backends",
 				"${workspaceFolder}/build/_deps/glfw-src/include",
 				"${workspaceFolder}/build/_deps/glfw-src/deps",
-				"${workspaceFolder}/build/_deps/imguizmo-src"
+				"${workspaceFolder}/build/_deps/imguizmo-src",
+				"${workspaceFolder}/build/_deps/catch2-src/src",
+				"${workspaceFolder}/build/_deps/catch2-build/generated-includes"
 			],
 			"defines": ["_DEBUG", "UNICODE", "_UNICODE"],
 			"windowsSdkVersion": "10.0",

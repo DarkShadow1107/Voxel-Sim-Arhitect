@@ -1,4 +1,4 @@
-#include "EngineProfiler.hpp"
+﻿#include "EngineProfiler.hpp"
 
 #include <glad/gl.h>
 #include <GLFW/glfw3.h>
@@ -15,10 +15,12 @@
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
+#ifndef NOMINMAX
 #define NOMINMAX
+#endif
 #include <windows.h>
 #include <psapi.h>
-#include <powerbase.h>   // CallNtPowerInformation
+#include <powrprof.h>    // CallNtPowerInformation
 #include <pdh.h>         // Performance Data Helper for real-time CPU frequency
 typedef LONG NTSTATUS;   // Avoid pulling in ntstatus.h (causes hundreds of macro redefinitions)
 
@@ -361,6 +363,8 @@ void EngineProfiler::show(float frameTime, bool& vsync, GLFWwindow* window) {
     }
 
     // ====================== RENDER ======================
+    ImVec2 mvCenter = ImGui::GetMainViewport()->GetCenter();
+    ImGui::SetNextWindowPos(mvCenter, ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSize(ImVec2(580, 800), ImGuiCond_FirstUseEver);
     ImGui::Begin("Engine Profiler");
 

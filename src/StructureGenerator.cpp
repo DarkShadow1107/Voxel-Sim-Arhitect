@@ -45,6 +45,36 @@ void StructureGenerator::generateSmallHouse(Chunk* chunk, int x, int y, int z) {
     }
 }
 
+void StructureGenerator::generateVillage(Chunk* chunk, int x, int y, int z) {
+    // Generate a small village with a few houses and paths
+    int numHouses = 3 + rand() % 3;
+    for (int i = 0; i < numHouses; ++i) {
+        int hx = x + (rand() % 20 - 10);
+        int hz = z + (rand() % 20 - 10);
+        // Find ground level
+        int hy = y;
+        while (hy > 0 && chunk->get(hx, hy - 1, hz) == 0) hy--;
+        while (hy < Chunk::SizeY && chunk->get(hx, hy, hz) != 0) hy++;
+        
+        if (hy > 0 && hy < Chunk::SizeY - 5) {
+            generateSmallHouse(chunk, hx, hy, hz);
+        }
+    }
+    
+    // Generate some paths
+    for (int i = 0; i < 20; ++i) {
+        int px = x + (rand() % 20 - 10);
+        int pz = z + (rand() % 20 - 10);
+        int py = y;
+        while (py > 0 && chunk->get(px, py - 1, pz) == 0) py--;
+        while (py < Chunk::SizeY && chunk->get(px, py, pz) != 0) py++;
+        
+        if (py > 0 && py < Chunk::SizeY) {
+            chunk->set(px, py - 1, pz, BLOCK_DIRT); // Path block placeholder
+        }
+    }
+}
+
 void StructureGenerator::generateRuins(Chunk* chunk, int x, int y, int z) {
     for (int i = 0; i < 15; ++i) {
         int rx = rand() % 5;
