@@ -67,6 +67,13 @@ TEST_CASE("Fluid: Ocean-biome chunk has no fluid updates scheduled at generation
     contN.SetFractalType(FastNoiseLite::FractalType_FBm);
     contN.SetFractalOctaves(3);
 
+    FastNoiseLite mountainN;
+    mountainN.SetSeed(seed + 1);
+    mountainN.SetFrequency(freq * 0.55f);
+    mountainN.SetNoiseType(FastNoiseLite::NoiseType_OpenSimplex2);
+    mountainN.SetFractalType(FastNoiseLite::FractalType_FBm);
+    mountainN.SetFractalOctaves(4);
+
     int oceanChunksFound = 0;
     Chunk probe; // reused across iterations — getBiomeAt is a static method
 
@@ -75,7 +82,7 @@ TEST_CASE("Fluid: Ocean-biome chunk has no fluid updates scheduled at generation
             // Check if the center column of this chunk is ocean
             float wxC = (float)(cx * Chunk::SizeX + Chunk::SizeX / 2);
             float wzC = (float)(cz * Chunk::SizeZ + Chunk::SizeZ / 2);
-            if (probe.getBiomeAt(biomeN, contN, wxC, wzC) != BIOME_OCEAN) continue;
+            if (probe.getBiomeAt(biomeN, contN, mountainN, wxC, wzC) != BIOME_OCEAN) continue;
 
             // This is an ocean-center chunk — generate it
             FastNoiseLite noise;
@@ -92,7 +99,7 @@ TEST_CASE("Fluid: Ocean-biome chunk has no fluid updates scheduled at generation
                 int lz =  packed        & 0xFF;
                 float wx2 = (float)(cx * Chunk::SizeX + lx);
                 float wz2 = (float)(cz * Chunk::SizeZ + lz);
-                if (probe.getBiomeAt(biomeN, contN, wx2, wz2) == BIOME_OCEAN)
+                if (probe.getBiomeAt(biomeN, contN, mountainN, wx2, wz2) == BIOME_OCEAN)
                     ++oceanColumnUpdates;
             }
 

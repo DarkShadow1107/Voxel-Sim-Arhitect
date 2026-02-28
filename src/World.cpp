@@ -156,6 +156,7 @@ std::vector<WorldSaveInfo> World::listSaves(const std::string& directory) {
 
 void World::update(const Vec3& playerPos, FastNoiseLite& noise, int seed, float freq, int baseHeight, TaskScheduler* scheduler) {
     m_newlyGeneratedChunks.clear();
+    m_removedChunks.clear();
     int px = (int)std::floor(playerPos.x / Chunk::SizeX);
     int pz = (int)std::floor(playerPos.z / Chunk::SizeZ);
 
@@ -171,16 +172,9 @@ void World::update(const Vec3& playerPos, FastNoiseLite& noise, int seed, float 
             data->mesh = std::make_unique<GLMesh>();
             data->dirty = true;
             
-            // Schedule fluid updates
-            for (uint32_t packed : data->chunk->m_fluidUpdates) {
-                int lx = (packed >> 16) & 0xFF;
-                int ly = (packed >> 8) & 0xFF;
-                int lz = packed & 0xFF;
-                int wx = res.x * Chunk::SizeX + lx;
-                int wz = res.z * Chunk::SizeZ + lz;
-                uint8_t b = data->chunk->get(lx, ly, lz);
-                scheduleBlockUpdate(wx, ly, wz, (b == BLOCK_LAVA) ? LAVA_TICK_DELAY : WATER_TICK_DELAY);
-            }
+            // Generation fluids are static — never schedule them on load.
+            // setBlock(AIR) in World::setBlock wakes adjacent fluids when
+            // the player digs a neighbouring block.
             data->chunk->m_fluidUpdates.clear();
 
             m_chunks[key] = std::move(data);
@@ -244,16 +238,9 @@ void World::update(const Vec3& playerPos, FastNoiseLite& noise, int seed, float 
             data->mesh = std::make_unique<GLMesh>();
             data->dirty = true;
 
-            // Schedule fluid updates
-            for (uint32_t packed : data->chunk->m_fluidUpdates) {
-                int lx = (packed >> 16) & 0xFF;
-                int ly = (packed >> 8) & 0xFF;
-                int lz = packed & 0xFF;
-                int wx = mc.x * Chunk::SizeX + lx;
-                int wz = mc.z * Chunk::SizeZ + lz;
-                uint8_t b = data->chunk->get(lx, ly, lz);
-                scheduleBlockUpdate(wx, ly, wz, (b == BLOCK_LAVA) ? LAVA_TICK_DELAY : WATER_TICK_DELAY);
-            }
+            // Generation fluids are static — never schedule them on load.
+            // setBlock(AIR) in World::setBlock wakes adjacent fluids when
+            // the player digs a neighbouring block.
             data->chunk->m_fluidUpdates.clear();
 
             m_chunks[key] = std::move(data);
@@ -269,10 +256,16 @@ void World::update(const Vec3& playerPos, FastNoiseLite& noise, int seed, float 
     // breaks or places a block next to water/lava.  This matches Minecraft behaviour.
 
     // 2. Unload far chunks
+    // IMPORTANT: Never unload a chunk while its mesh task is still running on a
+    // background thread.  The task holds a raw Chunk* captured at dispatch time;
+    // freeing the chunk before the task finishes causes a use-after-free crash.
+    // We defer unloading until the meshing flag is cleared in step 3.
     for (auto it = m_chunks.begin(); it != m_chunks.end();) {
         int dx = std::abs(it->second->x - px);
         int dz = std::abs(it->second->z - pz);
-        if (dx > m_renderDistance + 1 || dz > m_renderDistance + 1) {
+        if ((dx > m_renderDistance + 1 || dz > m_renderDistance + 1)
+            && !it->second->meshing) {   // wait until background mesh task finishes
+            m_removedChunks.push_back({it->second->x, it->second->z});
             it = m_chunks.erase(it);
         } else {
             ++it;

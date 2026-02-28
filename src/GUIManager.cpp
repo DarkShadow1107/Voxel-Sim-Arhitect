@@ -2,6 +2,7 @@
 #include "Renderer.hpp"
 #include "Framebuffer.hpp"
 #include "Shader.hpp"
+#include "AudioManager.hpp"
 #include <iostream>
 #include <algorithm>
 
@@ -133,126 +134,137 @@ void GUIManager::applyTheme() {
     ImGuiStyle& style = ImGui::GetStyle();
     ImVec4* colors = style.Colors;
 
-    // --- Geometry & spacing ---
-    style.WindowPadding     = ImVec2(12, 10);
-    style.FramePadding      = ImVec2(7, 4);
-    style.CellPadding       = ImVec2(6, 4);
-    style.ItemSpacing       = ImVec2(8, 6);
-    style.ItemInnerSpacing  = ImVec2(6, 4);
-    style.IndentSpacing     = 20.0f;
-    style.ScrollbarSize     = 12.0f;
-    style.GrabMinSize       = 10.0f;
+    // ── Geometry & spacing ─────────────────────────────────────────────────
+    style.WindowPadding       = ImVec2(16, 14);
+    style.FramePadding        = ImVec2(9,  5);
+    style.CellPadding         = ImVec2(7,  4);
+    style.ItemSpacing         = ImVec2(9,  6);
+    style.ItemInnerSpacing    = ImVec2(6,  4);
+    style.IndentSpacing       = 20.0f;
+    style.ScrollbarSize       = 10.0f;
+    style.GrabMinSize         = 10.0f;
+    style.SeparatorTextPadding = ImVec2(20, 5);
 
-    // --- Rounding (more modern / softer) ---
-    style.WindowRounding    = 8.0f;
-    style.ChildRounding     = 6.0f;
-    style.FrameRounding     = 5.0f;
-    style.PopupRounding     = 6.0f;
-    style.ScrollbarRounding = 8.0f;
-    style.GrabRounding      = 5.0f;
-    style.TabRounding       = 5.0f;
+    // ── Rounding — pronounced curves for a clean product feel ─────────────
+    style.WindowRounding      = 8.0f;
+    style.ChildRounding       = 5.0f;
+    style.FrameRounding       = 5.0f;
+    style.PopupRounding       = 6.0f;
+    style.ScrollbarRounding   = 6.0f;
+    style.GrabRounding        = 4.0f;
+    style.TabRounding         = 5.0f;
 
-    // --- Borders ---
-    style.WindowBorderSize  = 1.0f;
-    style.ChildBorderSize   = 1.0f;
-    style.PopupBorderSize   = 1.0f;
-    style.FrameBorderSize   = 0.0f;
-    style.TabBorderSize     = 0.0f;
+    // ── Borders — minimal, surface-only ────────────────────────────────────
+    style.WindowBorderSize    = 1.0f;
+    style.ChildBorderSize     = 1.0f;
+    style.PopupBorderSize     = 1.0f;
+    style.FrameBorderSize     = 0.0f;
+    style.TabBorderSize       = 0.0f;
 
-    // Accent: teal-blue (#4295D4 brightened for more pop)
-    const ImVec4 accent     = ImVec4(0.26f, 0.59f, 0.83f, 1.00f);
-    const ImVec4 accentDim  = ImVec4(0.17f, 0.42f, 0.63f, 1.00f);
-    const ImVec4 accentHi   = ImVec4(0.38f, 0.70f, 0.95f, 1.00f);
-    const ImVec4 accentTint = ImVec4(0.14f, 0.18f, 0.24f, 1.00f); // accent-tinted bg
+    // Centered window titles
+    style.WindowTitleAlign    = ImVec2(0.5f, 0.5f);
 
-    // --- Text ---
-    colors[ImGuiCol_Text]                   = ImVec4(0.92f, 0.93f, 0.95f, 1.00f);
-    colors[ImGuiCol_TextDisabled]           = ImVec4(0.42f, 0.45f, 0.50f, 1.00f);
+    // ── Palette ────────────────────────────────────────────────────────────
+    //   Background tiers  (dark → darkest for depth illusion)
+    //     bg0  #0E0E10   main window bg
+    //     bg1  #16161A   child/panel bg
+    //     bg2  #1E1E24   frames, input fields
+    //     bg3  #242430   elevated surfaces (title bar active)
+    //   Accent:  Cornflower #5B9BD5  (softer but vivid blue)
+    //   Accent+: #7AB8F0  (hover / highlight)
+    //   Accent-: #3A6A9E  (pressed / dim)
+    const ImVec4 accent    = ImVec4(0.357f, 0.608f, 0.835f, 1.00f);  // #5B9BD5
+    const ImVec4 accentDim = ImVec4(0.227f, 0.416f, 0.620f, 1.00f);  // #3A6A9E
+    const ImVec4 accentHi  = ImVec4(0.478f, 0.722f, 0.941f, 1.00f);  // #7AB8F0
 
-    // --- Backgrounds ---
-    colors[ImGuiCol_WindowBg]               = ImVec4(0.09f, 0.10f, 0.12f, 1.00f);
-    colors[ImGuiCol_ChildBg]                = ImVec4(0.12f, 0.13f, 0.16f, 1.00f);
-    colors[ImGuiCol_PopupBg]                = ImVec4(0.09f, 0.10f, 0.12f, 0.97f);
-    colors[ImGuiCol_MenuBarBg]              = ImVec4(0.09f, 0.10f, 0.14f, 1.00f);
+    // ── Text ───────────────────────────────────────────────────────────────
+    colors[ImGuiCol_Text]              = ImVec4(0.918f, 0.925f, 0.941f, 1.00f); // #EAECF0
+    colors[ImGuiCol_TextDisabled]      = ImVec4(0.376f, 0.400f, 0.451f, 1.00f); // #606673
 
-    // --- Borders ---
-    colors[ImGuiCol_Border]                 = ImVec4(0.22f, 0.25f, 0.29f, 0.65f);
-    colors[ImGuiCol_BorderShadow]           = ImVec4(0.00f, 0.00f, 0.00f, 0.30f);
+    // ── Backgrounds ────────────────────────────────────────────────────────
+    colors[ImGuiCol_WindowBg]          = ImVec4(0.055f, 0.055f, 0.063f, 1.00f); // #0E0E10
+    colors[ImGuiCol_ChildBg]           = ImVec4(0.086f, 0.086f, 0.102f, 1.00f); // #16161A
+    colors[ImGuiCol_PopupBg]           = ImVec4(0.075f, 0.075f, 0.090f, 0.98f); // #131316
+    colors[ImGuiCol_MenuBarBg]         = ImVec4(0.051f, 0.051f, 0.067f, 1.00f); // #0D0D11
 
-    // --- Frames (input fields, combos, drag floats) ---
-    colors[ImGuiCol_FrameBg]                = ImVec4(0.15f, 0.17f, 0.20f, 1.00f);
-    colors[ImGuiCol_FrameBgHovered]         = ImVec4(0.19f, 0.22f, 0.27f, 1.00f);
-    colors[ImGuiCol_FrameBgActive]          = ImVec4(0.13f, 0.15f, 0.19f, 1.00f);
+    // ── Borders ────────────────────────────────────────────────────────────
+    colors[ImGuiCol_Border]            = ImVec4(0.176f, 0.188f, 0.224f, 0.70f); // #2D3039
+    colors[ImGuiCol_BorderShadow]      = ImVec4(0.00f, 0.00f, 0.00f, 0.40f);
 
-    // --- Title bars --- (active gets a subtle accent tint so focused window is clear)
-    colors[ImGuiCol_TitleBg]                = ImVec4(0.07f, 0.08f, 0.10f, 1.00f);
-    colors[ImGuiCol_TitleBgActive]          = ImVec4(0.13f, 0.17f, 0.23f, 1.00f); // accent tinted
-    colors[ImGuiCol_TitleBgCollapsed]       = ImVec4(0.07f, 0.08f, 0.10f, 0.75f);
+    // ── Frames ─────────────────────────────────────────────────────────────
+    colors[ImGuiCol_FrameBg]           = ImVec4(0.118f, 0.118f, 0.141f, 1.00f); // #1E1E24
+    colors[ImGuiCol_FrameBgHovered]    = ImVec4(0.153f, 0.157f, 0.188f, 1.00f); // #272730
+    colors[ImGuiCol_FrameBgActive]     = ImVec4(0.094f, 0.098f, 0.118f, 1.00f); // #18181E
 
-    // --- Scrollbars ---
-    colors[ImGuiCol_ScrollbarBg]            = ImVec4(0.09f, 0.10f, 0.12f, 0.80f);
-    colors[ImGuiCol_ScrollbarGrab]          = ImVec4(0.28f, 0.31f, 0.36f, 1.00f);
-    colors[ImGuiCol_ScrollbarGrabHovered]   = ImVec4(0.36f, 0.40f, 0.46f, 1.00f);
-    colors[ImGuiCol_ScrollbarGrabActive]    = accent;
+    // ── Title bars ─────────────────────────────────────────────────────────
+    colors[ImGuiCol_TitleBg]           = ImVec4(0.043f, 0.043f, 0.055f, 1.00f); // #0B0B0E
+    colors[ImGuiCol_TitleBgActive]     = ImVec4(0.090f, 0.157f, 0.259f, 1.00f); // #172842
+    colors[ImGuiCol_TitleBgCollapsed]  = ImVec4(0.039f, 0.039f, 0.051f, 0.80f);
 
-    // --- Interactive controls ---
-    colors[ImGuiCol_CheckMark]              = accentHi;
-    colors[ImGuiCol_SliderGrab]             = accent;
-    colors[ImGuiCol_SliderGrabActive]       = accentHi;
+    // ── Scrollbars ─────────────────────────────────────────────────────────
+    colors[ImGuiCol_ScrollbarBg]       = ImVec4(0.055f, 0.059f, 0.075f, 0.90f);
+    colors[ImGuiCol_ScrollbarGrab]     = ImVec4(0.220f, 0.235f, 0.275f, 1.00f);
+    colors[ImGuiCol_ScrollbarGrabHovered] = ImVec4(0.290f, 0.310f, 0.360f, 1.00f);
+    colors[ImGuiCol_ScrollbarGrabActive]  = accent;
 
-    // --- Buttons ---
-    colors[ImGuiCol_Button]                 = ImVec4(0.17f, 0.19f, 0.23f, 1.00f);
-    colors[ImGuiCol_ButtonHovered]          = ImVec4(accent.x, accent.y, accent.z, 0.85f);
-    colors[ImGuiCol_ButtonActive]           = accentDim;
+    // ── Checkmarks / sliders ──────────────────────────────────────────────
+    colors[ImGuiCol_CheckMark]         = accentHi;
+    colors[ImGuiCol_SliderGrab]        = accent;
+    colors[ImGuiCol_SliderGrabActive]  = accentHi;
 
-    // --- Headers (collapsing headers, selectables) ---
-    colors[ImGuiCol_Header]                 = ImVec4(0.15f, 0.17f, 0.22f, 1.00f);
-    colors[ImGuiCol_HeaderHovered]          = ImVec4(accent.x, accent.y, accent.z, 0.55f);
-    colors[ImGuiCol_HeaderActive]           = ImVec4(accent.x, accent.y, accent.z, 0.80f);
+    // ── Buttons ────────────────────────────────────────────────────────────
+    colors[ImGuiCol_Button]            = ImVec4(0.133f, 0.153f, 0.196f, 1.00f); // #222732
+    colors[ImGuiCol_ButtonHovered]     = ImVec4(accent.x, accent.y, accent.z, 0.88f);
+    colors[ImGuiCol_ButtonActive]      = accentDim;
 
-    // --- Separators ---
-    colors[ImGuiCol_Separator]              = ImVec4(0.20f, 0.22f, 0.26f, 0.90f);
-    colors[ImGuiCol_SeparatorHovered]       = ImVec4(accent.x, accent.y, accent.z, 0.70f);
-    colors[ImGuiCol_SeparatorActive]        = accentHi;
+    // ── Headers ────────────────────────────────────────────────────────────
+    colors[ImGuiCol_Header]            = ImVec4(0.110f, 0.133f, 0.173f, 1.00f);
+    colors[ImGuiCol_HeaderHovered]     = ImVec4(accent.x, accent.y, accent.z, 0.50f);
+    colors[ImGuiCol_HeaderActive]      = ImVec4(accent.x, accent.y, accent.z, 0.78f);
 
-    // --- Resize grips ---
-    colors[ImGuiCol_ResizeGrip]             = ImVec4(accent.x, accent.y, accent.z, 0.18f);
-    colors[ImGuiCol_ResizeGripHovered]      = ImVec4(accent.x, accent.y, accent.z, 0.55f);
-    colors[ImGuiCol_ResizeGripActive]       = ImVec4(accent.x, accent.y, accent.z, 0.90f);
+    // ── Separators ────────────────────────────────────────────────────────
+    colors[ImGuiCol_Separator]         = ImVec4(0.165f, 0.180f, 0.216f, 0.85f);
+    colors[ImGuiCol_SeparatorHovered]  = ImVec4(accent.x, accent.y, accent.z, 0.65f);
+    colors[ImGuiCol_SeparatorActive]   = accentHi;
 
-    // --- Tabs ---
-    colors[ImGuiCol_Tab]                    = ImVec4(0.11f, 0.12f, 0.15f, 1.00f);
-    colors[ImGuiCol_TabHovered]             = ImVec4(accent.x, accent.y, accent.z, 0.70f);
-    colors[ImGuiCol_TabActive]              = accentTint;              // accent-tinted for visible active tab
-    colors[ImGuiCol_TabUnfocused]           = ImVec4(0.09f, 0.10f, 0.12f, 1.00f);
-    colors[ImGuiCol_TabUnfocusedActive]     = ImVec4(0.13f, 0.15f, 0.19f, 1.00f);
+    // ── Resize grips ──────────────────────────────────────────────────────
+    colors[ImGuiCol_ResizeGrip]        = ImVec4(accent.x, accent.y, accent.z, 0.14f);
+    colors[ImGuiCol_ResizeGripHovered] = ImVec4(accent.x, accent.y, accent.z, 0.52f);
+    colors[ImGuiCol_ResizeGripActive]  = ImVec4(accent.x, accent.y, accent.z, 0.88f);
 
-    // --- Docking ---
-    colors[ImGuiCol_DockingPreview]         = ImVec4(accent.x, accent.y, accent.z, 0.55f);
-    colors[ImGuiCol_DockingEmptyBg]         = ImVec4(0.07f, 0.08f, 0.09f, 1.00f);
+    // ── Tabs ──────────────────────────────────────────────────────────────
+    colors[ImGuiCol_Tab]               = ImVec4(0.071f, 0.075f, 0.094f, 1.00f);
+    colors[ImGuiCol_TabHovered]        = ImVec4(accent.x, accent.y, accent.z, 0.60f);
+    colors[ImGuiCol_TabActive]         = ImVec4(0.110f, 0.176f, 0.282f, 1.00f); // accent-tinted
+    colors[ImGuiCol_TabUnfocused]      = ImVec4(0.059f, 0.063f, 0.082f, 1.00f);
+    colors[ImGuiCol_TabUnfocusedActive]= ImVec4(0.094f, 0.114f, 0.149f, 1.00f);
 
-    // --- Plots ---
-    colors[ImGuiCol_PlotLines]              = ImVec4(0.50f, 0.65f, 0.82f, 1.00f);
-    colors[ImGuiCol_PlotLinesHovered]       = accentHi;
-    colors[ImGuiCol_PlotHistogram]          = accent;
-    colors[ImGuiCol_PlotHistogramHovered]   = accentHi;
+    // ── Docking ───────────────────────────────────────────────────────────
+    colors[ImGuiCol_DockingPreview]    = ImVec4(accent.x, accent.y, accent.z, 0.50f);
+    colors[ImGuiCol_DockingEmptyBg]    = ImVec4(0.039f, 0.043f, 0.055f, 1.00f);
 
-    // --- Table ---
-    colors[ImGuiCol_TableHeaderBg]          = ImVec4(0.12f, 0.14f, 0.17f, 1.00f);
-    colors[ImGuiCol_TableBorderStrong]      = ImVec4(0.22f, 0.25f, 0.29f, 1.00f);
-    colors[ImGuiCol_TableBorderLight]       = ImVec4(0.17f, 0.19f, 0.23f, 1.00f);
-    colors[ImGuiCol_TableRowBg]             = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
-    colors[ImGuiCol_TableRowBgAlt]          = ImVec4(1.00f, 1.00f, 1.00f, 0.04f);
+    // ── Plots ─────────────────────────────────────────────────────────────
+    colors[ImGuiCol_PlotLines]         = ImVec4(0.478f, 0.655f, 0.835f, 1.00f);
+    colors[ImGuiCol_PlotLinesHovered]  = accentHi;
+    colors[ImGuiCol_PlotHistogram]     = accent;
+    colors[ImGuiCol_PlotHistogramHovered] = accentHi;
 
-    // --- Misc ---
-    colors[ImGuiCol_TextSelectedBg]         = ImVec4(accent.x, accent.y, accent.z, 0.35f);
-    colors[ImGuiCol_DragDropTarget]         = ImVec4(accent.x, accent.y, accent.z, 0.90f);
-    colors[ImGuiCol_NavHighlight]           = accentHi;
-    colors[ImGuiCol_NavWindowingHighlight]  = ImVec4(1.00f, 1.00f, 1.00f, 0.70f);
-    colors[ImGuiCol_NavWindowingDimBg]      = ImVec4(0.00f, 0.00f, 0.00f, 0.40f);
-    colors[ImGuiCol_ModalWindowDimBg]       = ImVec4(0.00f, 0.00f, 0.00f, 0.60f);
+    // ── Tables ────────────────────────────────────────────────────────────
+    colors[ImGuiCol_TableHeaderBg]     = ImVec4(0.094f, 0.110f, 0.145f, 1.00f);
+    colors[ImGuiCol_TableBorderStrong] = ImVec4(0.176f, 0.196f, 0.235f, 1.00f);
+    colors[ImGuiCol_TableBorderLight]  = ImVec4(0.130f, 0.149f, 0.188f, 1.00f);
+    colors[ImGuiCol_TableRowBg]        = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
+    colors[ImGuiCol_TableRowBgAlt]     = ImVec4(1.00f, 1.00f, 1.00f, 0.03f);
 
-    // Multi-viewport style
+    // ── Misc ──────────────────────────────────────────────────────────────
+    colors[ImGuiCol_TextSelectedBg]    = ImVec4(accent.x, accent.y, accent.z, 0.32f);
+    colors[ImGuiCol_DragDropTarget]    = ImVec4(accent.x, accent.y, accent.z, 0.88f);
+    colors[ImGuiCol_NavHighlight]      = accentHi;
+    colors[ImGuiCol_NavWindowingHighlight] = ImVec4(1.00f, 1.00f, 1.00f, 0.70f);
+    colors[ImGuiCol_NavWindowingDimBg] = ImVec4(0.00f, 0.00f, 0.00f, 0.45f);
+    colors[ImGuiCol_ModalWindowDimBg]  = ImVec4(0.00f, 0.00f, 0.00f, 0.65f);
+
+    // Multi-viewport: no rounding on OS-level windows
     if (ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
         style.WindowRounding = 0.0f;
         colors[ImGuiCol_WindowBg].w = 1.0f;
@@ -262,14 +274,12 @@ void GUIManager::applyTheme() {
 void GUIManager::showMainMenuBar(bool& showProfiler, bool& showMemory, bool& showECS, bool& showWorldEditor, bool& showSettings, bool& showSoundEditor, bool& showBlockDesigner, bool& showMobDesigner, bool& showInteractionEditor, bool& showToolDesigner, bool& showWeatherDesigner, bool& showSoundDesigner, bool& showAdvWorldEditor, bool& showTextureDesigner) {
 
     // ── Taller, more spacious bar ────────────────────────────────────────────
-    // FramePadding.y controls the bar height; ItemSpacing.x controls gap between menus.
-    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,  ImVec2(12.0f, 9.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,  ImVec2(12.0f, 11.0f));
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,   ImVec2(10.0f, 8.0f));
-    // Slightly richer menu-bar background + accent-tinted popup background
-    ImGui::PushStyleColor(ImGuiCol_MenuBarBg,        ImVec4(0.09f, 0.10f, 0.15f, 1.00f));
-    ImGui::PushStyleColor(ImGuiCol_PopupBg,          ImVec4(0.08f, 0.09f, 0.12f, 0.98f));
-    ImGui::PushStyleColor(ImGuiCol_HeaderHovered,    ImVec4(0.26f, 0.59f, 0.83f, 0.38f));
-    ImGui::PushStyleColor(ImGuiCol_Header,           ImVec4(0.17f, 0.21f, 0.28f, 1.00f));
+    ImGui::PushStyleColor(ImGuiCol_MenuBarBg,        ImVec4(0.051f, 0.051f, 0.067f, 1.00f)); // match applyTheme
+    ImGui::PushStyleColor(ImGuiCol_PopupBg,          ImVec4(0.075f, 0.075f, 0.090f, 0.98f));
+    ImGui::PushStyleColor(ImGuiCol_HeaderHovered,    ImVec4(0.357f, 0.608f, 0.835f, 0.35f)); // accent hover
+    ImGui::PushStyleColor(ImGuiCol_Header,           ImVec4(0.110f, 0.176f, 0.282f, 1.00f)); // accent-tinted
 
     const bool barOpen = ImGui::BeginMainMenuBar();
 
@@ -280,8 +290,21 @@ void GUIManager::showMainMenuBar(bool& showProfiler, bool& showMemory, bool& sho
     if (!barOpen)
         return;
 
+    // ── Bottom accent line (matches new theme accent #5B9BD5) ───────────────
+    {
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        ImVec2 p = ImGui::GetWindowPos();
+        float w  = ImGui::GetWindowWidth();
+        float h  = ImGui::GetWindowHeight();
+        // Full-width gradient bar: fade from accent-dim on left to accent on right
+        dl->AddRectFilledMultiColor(
+            ImVec2(p.x, p.y + h - 2.0f), ImVec2(p.x + w, p.y + h),
+            IM_COL32(58, 106, 158, 100), IM_COL32(91, 155, 213, 140),
+            IM_COL32(91, 155, 213, 140), IM_COL32(58, 106, 158, 100));
+    }
+
     // ── Left brand badge ─────────────────────────────────────────────────────
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.38f, 0.72f, 0.98f, 1.00f));
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.478f, 0.722f, 0.941f, 1.00f)); // accentHi
     ImGui::TextUnformatted("VSA");
     ImGui::PopStyleColor();
     ImGui::SameLine(0.0f, 10.0f);
@@ -385,31 +408,166 @@ void GUIManager::showMainMenuBar(bool& showProfiler, bool& showMemory, bool& sho
 
     // ── Settings ──────────────────────────────────────────────────────────────
     if (ImGui::BeginMenu("Settings")) {
-        ImGui::MenuItem("Preferences", "F10", &showSettings);
+        ImGui::SeparatorText("Application");
+        if (ImGui::MenuItem("Preferences", "Ctrl+P", nullptr, true)) { showSettings = true; }
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
-            ImGui::SetTooltip("VSync, fullscreen, render distance and keybindings");
+            ImGui::SetTooltip("Display, graphics and control settings");
         ImGui::EndMenu();
     }
 
     // ── Help ──────────────────────────────────────────────────────────────────
     if (ImGui::BeginMenu("Help")) {
-        ImGui::SeparatorText("Controls");
-        ImGui::TextDisabled("WASD");      ImGui::SameLine(120); ImGui::TextDisabled("Move");
-        ImGui::TextDisabled("Space");     ImGui::SameLine(120); ImGui::TextDisabled("Jump / Fly Up");
-        ImGui::TextDisabled("Shift");     ImGui::SameLine(120); ImGui::TextDisabled("Sprint / Fly Down");
-        ImGui::TextDisabled("Dbl Space"); ImGui::SameLine(120); ImGui::TextDisabled("Toggle Fly");
-        ImGui::TextDisabled("LMB");       ImGui::SameLine(120); ImGui::TextDisabled("Break Block");
-        ImGui::TextDisabled("RMB");       ImGui::SameLine(120); ImGui::TextDisabled("Place Block");
-        ImGui::TextDisabled("1-9");       ImGui::SameLine(120); ImGui::TextDisabled("Hotbar Slot");
-        ImGui::TextDisabled("Tab");       ImGui::SameLine(120); ImGui::TextDisabled("Inventory");
+        if (ImGui::MenuItem("Open Help & Reference Window..."))
+            m_helperWindow.open();
+
         ImGui::Separator();
-        ImGui::TextDisabled("Version: V0.6 Beta  |  Build: " __DATE__);
+
+        // Quick-reference: most-used controls (full detail in HelperWindow)
+        ImGui::SeparatorText("Quick Reference");
+        ImGui::TextDisabled("W A S D / Arrows"); ImGui::SameLine(180); ImGui::TextDisabled("Move");
+        ImGui::TextDisabled("Space");            ImGui::SameLine(180); ImGui::TextDisabled("Jump / Fly Up");
+        ImGui::TextDisabled("Dbl Space");        ImGui::SameLine(180); ImGui::TextDisabled("Toggle Fly");
+        ImGui::TextDisabled("LMB");              ImGui::SameLine(180); ImGui::TextDisabled("Break Block");
+        ImGui::TextDisabled("RMB");              ImGui::SameLine(180); ImGui::TextDisabled("Place Block");
+        ImGui::TextDisabled("E");                ImGui::SameLine(180); ImGui::TextDisabled("Inventory");
+        ImGui::TextDisabled("F10");              ImGui::SameLine(180); ImGui::TextDisabled("Toggle Menu/World");
+        ImGui::TextDisabled("Ctrl+P");           ImGui::SameLine(180); ImGui::TextDisabled("Preferences");
+        ImGui::TextDisabled("Esc");              ImGui::SameLine(180); ImGui::TextDisabled("Game Menu");
+
+        ImGui::Separator();
+        ImGui::TextDisabled("Voxel-Sim Architect  V0.6 Beta");
+        ImGui::TextDisabled("Build: " __DATE__ "  " __TIME__);
         ImGui::EndMenu();
     }
 
-    // ── Right-aligned status chips ────────────────────────────────────────────
+    // ── Quick-Launch Toolbar ──────────────────────────────────────────────────
+    //
+    // Buttons are split into four colour-coded groups separated by hairlines:
+    //   WORLD  (blue)    — World editor
+    //   DESIGN (violet)  — Blocks, Mobs, Textures, Tools, Weather
+    //   ENGINE (amber)   — Game Engine, Sound
+    //   VIEW   (green)   — Profiler
+    //
+    // Active state: filled accent colour + bright label.
+    // Inactive state: near-invisible, slightly tinted by category.
+    // ──────────────────────────────────────────────────────────────────────────
+    {
+        // Leading separator after menu items
+        ImGui::SameLine(0.0f, 12.0f);
+        auto drawBarSep = [&]() {
+            float sepH = ImGui::GetFrameHeight() * 0.55f;
+            float cy   = ImGui::GetCursorScreenPos().y + (ImGui::GetFrameHeight() - sepH) * 0.5f;
+            float cx   = ImGui::GetCursorScreenPos().x;
+            ImGui::GetWindowDrawList()->AddLine(
+                ImVec2(cx, cy), ImVec2(cx, cy + sepH),
+                IM_COL32(70, 85, 115, 120), 1.0f);
+            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 10.0f);
+        };
+        drawBarSep();
+
+        const float kBtnH = ImGui::GetFrameHeight() * 0.74f;
+
+        // Category-tinted quick-launch button helper.
+        //   r/g/b  = category base colour (used for active fill + text tint)
+        //   active = whether the panel is currently open
+        auto qlBtn = [&](const char* label, float r, float g, float b, bool active) -> bool {
+            ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding,  5.0f);
+            ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
+            float textW = ImGui::CalcTextSize(label).x;
+            float btnW  = textW + ImGui::GetStyle().FramePadding.x * 2.0f + 10.0f;
+            if (active) {
+                ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(r*0.55f, g*0.55f, b*0.55f, 1.00f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(r*0.72f, g*0.72f, b*0.72f, 1.00f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(r*0.40f, g*0.40f, b*0.40f, 1.00f));
+                ImGui::PushStyleColor(ImGuiCol_Text,          ImVec4(r*1.4f > 1.f ? 1.f : r*1.4f,
+                                                                      g*1.4f > 1.f ? 1.f : g*1.4f,
+                                                                      b*1.4f > 1.f ? 1.f : b*1.4f, 1.00f));
+            } else {
+                ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(r*0.10f, g*0.10f, b*0.10f, 1.00f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(r*0.28f, g*0.28f, b*0.28f, 0.90f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(r*0.45f, g*0.45f, b*0.45f, 1.00f));
+                ImGui::PushStyleColor(ImGuiCol_Text,          ImVec4(0.52f, 0.56f, 0.65f, 1.00f));
+            }
+            bool clicked = ImGui::Button(label, ImVec2(btnW, kBtnH));
+            ImGui::PopStyleColor(4);
+            ImGui::PopStyleVar(2);
+            return clicked;
+        };
+
+        // ── WORLD group (blue: 0.36, 0.61, 0.84) ────
+        if (qlBtn("World##ql", 0.36f, 0.61f, 0.84f, showWorldEditor))
+            showWorldEditor = !showWorldEditor;
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+            ImGui::SetTooltip("World Editor  [Ctrl+W]");
+
+        ImGui::SameLine(0.0f, 12.0f);
+        drawBarSep();
+
+        // ── DESIGN group (violet: 0.62, 0.40, 0.88) ─
+        if (qlBtn("Blocks##ql",  0.62f, 0.40f, 0.88f, showBlockDesigner))
+            showBlockDesigner = !showBlockDesigner;
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+            ImGui::SetTooltip("Block Designer  [B]");
+        ImGui::SameLine(0.0f, 3.0f);
+
+        if (qlBtn("Mobs##ql",    0.62f, 0.40f, 0.88f, showMobDesigner))
+            showMobDesigner = !showMobDesigner;
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+            ImGui::SetTooltip("Mob Designer  [M]");
+        ImGui::SameLine(0.0f, 3.0f);
+
+        if (qlBtn("Textures##ql",0.62f, 0.40f, 0.88f, showTextureDesigner))
+            showTextureDesigner = !showTextureDesigner;
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+            ImGui::SetTooltip("Texture Designer");
+        ImGui::SameLine(0.0f, 3.0f);
+
+        if (qlBtn("Tools##ql",   0.62f, 0.40f, 0.88f, showToolDesigner))
+            showToolDesigner = !showToolDesigner;
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+            ImGui::SetTooltip("Tool Designer");
+        ImGui::SameLine(0.0f, 3.0f);
+
+        if (qlBtn("Weather##ql", 0.62f, 0.40f, 0.88f, showWeatherDesigner))
+            showWeatherDesigner = !showWeatherDesigner;
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+            ImGui::SetTooltip("Weather Designer");
+
+        ImGui::SameLine(0.0f, 12.0f);
+        drawBarSep();
+
+        // ── ENGINE group (amber: 0.90, 0.62, 0.20) ──
+        if (qlBtn("Engine##ql", 0.90f, 0.62f, 0.20f, showInteractionEditor))
+            showInteractionEditor = !showInteractionEditor;
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+            ImGui::SetTooltip("Game Engine Editor  [G]");
+        ImGui::SameLine(0.0f, 3.0f);
+
+        if (qlBtn("Sound##ql",  0.90f, 0.62f, 0.20f, showSoundEditor))
+            showSoundEditor = !showSoundEditor;
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+            ImGui::SetTooltip("Sound Editor");
+
+        ImGui::SameLine(0.0f, 12.0f);
+        drawBarSep();
+
+        // ── VIEW group (green: 0.28, 0.82, 0.50) ────
+        if (qlBtn("Profiler##ql", 0.28f, 0.82f, 0.50f, showProfiler))
+            showProfiler = !showProfiler;
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+            ImGui::SetTooltip("Performance Profiler  [F2]");
+        ImGui::SameLine(0.0f, 3.0f);
+
+        if (qlBtn("Prefs##ql", 0.28f, 0.82f, 0.50f, showSettings))
+            showSettings = !showSettings;
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+            ImGui::SetTooltip("Preferences  [F10]");
+    }
+
+    // ── Right-aligned status / info bar ──────────────────────────────────────
     {
         const float fps = ImGui::GetIO().Framerate;
+        const float frameMs = (fps > 0.0f) ? 1000.0f / fps : 0.0f;
 
         // Count open panels
         int openCount = (showProfiler ? 1 : 0) + (showMemory ? 1 : 0) + (showECS ? 1 : 0)
@@ -420,67 +578,68 @@ void GUIManager::showMainMenuBar(bool& showProfiler, bool& showMemory, bool& sho
                       + (showSoundEditor ? 1 : 0) + (showInteractionEditor ? 1 : 0)
                       + (showSettings ? 1 : 0);
 
-        // FPS colour: green / yellow / red
-        const ImVec4 fpsCol = (fps >= 55.f) ? ImVec4(0.35f, 0.95f, 0.50f, 1.00f)
-                            : (fps >= 30.f) ? ImVec4(1.00f, 0.82f, 0.20f, 1.00f)
-                                            : ImVec4(1.00f, 0.30f, 0.30f, 1.00f);
+        // FPS colour: emerald ≥55  /  amber ≥30  /  red <30
+        const ImVec4 fpsCol = (fps >= 55.f) ? ImVec4(0.30f, 0.90f, 0.48f, 1.00f)
+                            : (fps >= 30.f) ? ImVec4(0.96f, 0.76f, 0.15f, 1.00f)
+                                            : ImVec4(0.96f, 0.28f, 0.28f, 1.00f);
 
-        // Build right-side string pieces
-        char fpsBuf[32], panelBuf[32];
-        snprintf(fpsBuf, sizeof(fpsBuf), "%.0f FPS", fps);
+        char fpsBuf[32], msBuf[24], panelBuf[32];
+        snprintf(fpsBuf,   sizeof(fpsBuf),   "%.0f FPS",    fps);
+        snprintf(msBuf,    sizeof(msBuf),    "%.1f ms",     frameMs);
         if (openCount > 0)
-            snprintf(panelBuf, sizeof(panelBuf), "%d panel%s", openCount, openCount == 1 ? "" : "s");
+            snprintf(panelBuf, sizeof(panelBuf), "%d open", openCount);
         else
             panelBuf[0] = '\0';
 
         constexpr const char* kVersion = "V0.6 Beta";
         const float spx = ImGui::GetStyle().ItemSpacing.x;
 
-        // Measure total width so we can right-align
-        float totalW = ImGui::CalcTextSize(kVersion).x + spx * 2.0f
-                     + ImGui::CalcTextSize(fpsBuf).x  + spx * 2.0f;
+        // Measure total width for right-align
+        float totalW = ImGui::CalcTextSize(fpsBuf).x  + spx
+                     + ImGui::CalcTextSize(msBuf).x   + spx + 16.0f // sep
+                     + ImGui::CalcTextSize(kVersion).x + spx + 16.0f; // sep
         if (panelBuf[0])
-            totalW += ImGui::CalcTextSize(panelBuf).x + spx * 2.0f + 8.0f;
-        totalW += 16.0f; // right margin
+            totalW += ImGui::CalcTextSize(panelBuf).x + spx + 16.0f;
+        totalW += 18.0f; // right margin
 
         ImGui::SetCursorPosX(ImGui::GetContentRegionMax().x - totalW);
 
-        // Panel count chip (only when panels are open)
-        if (panelBuf[0]) {
-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.70f, 0.78f, 0.90f, 1.00f));
-            ImGui::TextUnformatted(panelBuf);
-            ImGui::PopStyleColor();
+        // Helper: inline thin bar separator
+        auto inlineSep = [&]() {
             ImGui::SameLine(0.0f, 8.0f);
-
-            // thin separator
-            float sepH = ImGui::GetFrameHeight() * 0.50f;
+            float sepH = ImGui::GetFrameHeight() * 0.45f;
             float cy   = ImGui::GetCursorScreenPos().y + (ImGui::GetFrameHeight() - sepH) * 0.5f;
             float cx   = ImGui::GetCursorScreenPos().x;
-            ImGui::GetWindowDrawList()->AddLine(
-                ImVec2(cx, cy), ImVec2(cx, cy + sepH),
-                IM_COL32(60, 80, 110, 120), 1.0f);
+            ImGui::GetWindowDrawList()->AddLine(ImVec2(cx, cy), ImVec2(cx, cy + sepH),
+                IM_COL32(55, 70, 100, 130), 1.0f);
             ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 8.0f);
+        };
+
+        // Open-panel count badge
+        if (panelBuf[0]) {
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.62f, 0.72f, 0.88f, 1.00f));
+            ImGui::TextUnformatted(panelBuf);
+            ImGui::PopStyleColor();
+            inlineSep();
         }
 
-        // FPS chip with traffic-light colour
+        // FPS (colour-coded)
         ImGui::PushStyleColor(ImGuiCol_Text, fpsCol);
         ImGui::TextUnformatted(fpsBuf);
         ImGui::PopStyleColor();
-        ImGui::SameLine(0.0f, 8.0f);
+        ImGui::SameLine(0.0f, 4.0f);
 
-        // thin separator
-        {
-            float sepH = ImGui::GetFrameHeight() * 0.50f;
-            float cy   = ImGui::GetCursorScreenPos().y + (ImGui::GetFrameHeight() - sepH) * 0.5f;
-            float cx   = ImGui::GetCursorScreenPos().x;
-            ImGui::GetWindowDrawList()->AddLine(
-                ImVec2(cx, cy), ImVec2(cx, cy + sepH),
-                IM_COL32(60, 80, 110, 120), 1.0f);
-            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 8.0f);
-        }
+        // ms (muted, same line)
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.38f, 0.44f, 0.55f, 1.00f));
+        ImGui::TextUnformatted(msBuf);
+        ImGui::PopStyleColor();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+            ImGui::SetTooltip("%.3f ms per frame", frameMs);
 
-        // Version badge (muted)
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.42f, 0.48f, 0.58f, 1.00f));
+        inlineSep();
+
+        // Version badge
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.36f, 0.42f, 0.52f, 1.00f));
         ImGui::TextUnformatted(kVersion);
         ImGui::PopStyleColor();
     }
@@ -876,22 +1035,182 @@ void GUIManager::showInteractionEditor(bool* open) {
 }
 
 void GUIManager::showSettings(bool* open, bool& vsync, bool& wireframe, bool& fullscreen, bool& backfaceCulling, Renderer& renderer) {
-    ImGui::Begin("Settings", open);
+    // Center on first appearance only — do NOT call SetNextWindowFocus() every
+    // frame or it will steal keyboard/mouse focus from every other panel.
+    ImGui::SetNextWindowSize(ImVec2(560, 520), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
 
-    if (ImGui::Checkbox("VSync", &vsync)) {
-        renderer.setVSync(vsync);
+    // Bring to front once on open; after that the user can freely reorder.
+    static bool s_justOpened = false;
+    if (!s_justOpened) {
+        ImGui::SetNextWindowFocus();
+        s_justOpened = true;
     }
+    // Reset trigger for next open.
+    static bool s_wasOpen = false;
+    if (!*open) { s_wasOpen = false; s_justOpened = false; }
+    else if (!s_wasOpen) { s_wasOpen = true; s_justOpened = false; }
 
-    if (ImGui::Checkbox("Wireframe", &wireframe)) {
-        renderer.setWireframe(wireframe);
-    }
+    const ImGuiWindowFlags prefFlags = ImGuiWindowFlags_NoDocking
+                                     | ImGuiWindowFlags_NoCollapse;
+    if (!ImGui::Begin("Preferences", open, prefFlags)) { ImGui::End(); return; }
 
-    if (ImGui::Checkbox("Backface Culling", &backfaceCulling)) {
-        renderer.setBackfaceCulling(backfaceCulling);
-    }
+    if (ImGui::BeginTabBar("##PrefTabs")) {
 
-    if (ImGui::Checkbox("Fullscreen", &fullscreen)) {
-        renderer.setFullscreen(fullscreen);
+        // ── Display ───────────────────────────────────────────────────────────
+        if (ImGui::BeginTabItem("Display")) {
+            ImGui::Spacing();
+            ImGui::SeparatorText("Window");
+            ImGui::Spacing();
+
+            if (ImGui::Checkbox("Fullscreen", &fullscreen))
+                renderer.setFullscreen(fullscreen);
+            ImGui::SameLine(0.0f, 16.0f);
+            if (ImGui::Checkbox("VSync", &vsync))
+                renderer.setVSync(vsync);
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+                ImGui::SetTooltip("Locks framerate to monitor refresh rate.\nDisable for uncapped FPS.");
+
+            ImGui::Spacing();
+            ImGui::SeparatorText("Rendering");
+            ImGui::Spacing();
+
+            if (ImGui::Checkbox("Wireframe Mode", &wireframe))
+                renderer.setWireframe(wireframe);
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+                ImGui::SetTooltip("Render only block edges — useful for debugging geometry.");
+
+            if (ImGui::Checkbox("Backface Culling", &backfaceCulling))
+                renderer.setBackfaceCulling(backfaceCulling);
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+                ImGui::SetTooltip("Skip rendering faces that face away from the camera.\nImproves performance, disable if you see holes.");
+
+            ImGui::Spacing();
+            ImGui::SeparatorText("Info");
+            ImGui::Spacing();
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.38f, 0.44f, 0.55f, 1.00f));
+            ImGui::TextUnformatted("Build: " __DATE__ "  " __TIME__);
+            ImGui::TextUnformatted("Version: V0.6 Beta");
+            ImGui::PopStyleColor();
+            ImGui::EndTabItem();
+        }
+
+        // ── Graphics ──────────────────────────────────────────────────────────
+        if (ImGui::BeginTabItem("Graphics")) {
+            ImGui::Spacing();
+            ImGui::SeparatorText("Performance");
+            ImGui::Spacing();
+
+            static int renderDist = 8;
+            ImGui::PushItemWidth(220.0f);
+            ImGui::SliderInt("Render Distance", &renderDist, 2, 24);
+            ImGui::PopItemWidth();
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+                ImGui::SetTooltip("Chunks loaded around the player.\nLower values improve performance.");
+
+            static float fov = 75.0f;
+            ImGui::PushItemWidth(220.0f);
+            ImGui::SliderFloat("Field of View", &fov, 50.0f, 110.0f, "%.0f deg");
+            ImGui::PopItemWidth();
+
+            ImGui::Spacing();
+            ImGui::SeparatorText("Quality");
+            ImGui::Spacing();
+
+            static bool ambientOcclusion = true;
+            static bool faceShading      = true;
+            static bool fogEnabled       = true;
+            ImGui::Checkbox("Ambient Occlusion", &ambientOcclusion);
+            ImGui::SameLine(200.0f);
+            ImGui::Checkbox("Face Shading", &faceShading);
+            ImGui::Checkbox("Distance Fog", &fogEnabled);
+
+            ImGui::Spacing();
+            ImGui::TextDisabled("Note: Some settings take effect on next world load.");
+            ImGui::EndTabItem();
+        }
+
+        // ── Audio ─────────────────────────────────────────────────────────────
+        if (ImGui::BeginTabItem("Audio")) {
+            ImGui::Spacing();
+            ImGui::SeparatorText("Volume");
+            ImGui::Spacing();
+
+            ImGui::PushItemWidth(260.0f);
+            float master = AudioManager::getInstance().getMasterVolume();
+            if (ImGui::SliderFloat("Master Volume", &master, 0.0f, 1.0f, "%.2f"))
+                AudioManager::getInstance().setMasterVolume(master);
+
+            float music = AudioManager::getInstance().getMusicVolume();
+            if (ImGui::SliderFloat("Music Volume", &music, 0.0f, 1.0f, "%.2f"))
+                AudioManager::getInstance().setMusicVolume(music);
+            ImGui::PopItemWidth();
+
+            ImGui::Spacing();
+            ImGui::SeparatorText("Toggles");
+            ImGui::Spacing();
+
+            bool mobs = AudioManager::getInstance().isMobSoundsEnabled();
+            if (ImGui::Checkbox("Mob Sounds", &mobs))
+                AudioManager::getInstance().setMobSoundsEnabled(mobs);
+            ImGui::SameLine(200.0f);
+            bool blks = AudioManager::getInstance().isBlockSoundsEnabled();
+            if (ImGui::Checkbox("Block Sounds", &blks))
+                AudioManager::getInstance().setBlockSoundsEnabled(blks);
+
+            bool musicOn = AudioManager::getInstance().isMusicEnabled();
+            if (ImGui::Checkbox("Background Music", &musicOn))
+                AudioManager::getInstance().setMusicEnabled(musicOn);
+
+            ImGui::Spacing();
+            ImGui::TextDisabled("Tip: Press ESC in-game to quickly access the Game Menu.");
+            ImGui::EndTabItem();
+        }
+
+        // ── Controls ──────────────────────────────────────────────────────────
+        if (ImGui::BeginTabItem("Controls")) {
+            ImGui::Spacing();
+            ImGui::SeparatorText("Mouse");
+            ImGui::Spacing();
+
+            static float mouseSens = 0.08f;
+            ImGui::PushItemWidth(220.0f);
+            ImGui::SliderFloat("Sensitivity", &mouseSens, 0.01f, 0.50f, "%.2f");
+            ImGui::PopItemWidth();
+
+            static bool invertY = false;
+            ImGui::Checkbox("Invert Y Axis", &invertY);
+
+            ImGui::Spacing();
+            ImGui::SeparatorText("Key Reference");
+            ImGui::Spacing();
+
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.55f, 0.60f, 0.70f, 1.00f));
+            auto row = [](const char* key, const char* action) {
+                ImGui::TextUnformatted(key);
+                ImGui::SameLine(150.0f);
+                ImGui::TextUnformatted(action);
+            };
+            row("W A S D",      "Move");
+            row("Space",        "Jump / Fly Up");
+            row("Shift",        "Sprint / Fly Down");
+            row("Space x2",     "Toggle Fly Mode");
+            row("LMB",          "Break Block");
+            row("RMB",          "Place Block");
+            row("1 – 9",        "Hotbar Slot");
+            row("Tab",          "Inventory");
+            row("E",            "Interact / Pick Block");
+            row("F2",           "Profiler Toggle");
+            row("Ctrl+W",       "World Editor");
+            row("Ctrl+P",       "Preferences");
+            row("ESC",          "Game Menu / Audio");
+            row("F11",          "Toggle Fullscreen");
+            row("F5",           "Regenerate World");
+            ImGui::PopStyleColor();
+            ImGui::EndTabItem();
+        }
+
+        ImGui::EndTabBar();
     }
 
     ImGui::End();
@@ -955,6 +1274,217 @@ void GUIManager::coordinateMobBlockEdit(bool& showBlockDesigner) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// showWindowTabBar — redesigned secondary row pinned below the main menu bar.
+//
+// Features:
+//   • 40 px height (up from 28 px) for easier click targets
+//   • Left-side coloured accent bar on each chip for category identity
+//   • Group labels: WORLD / DESIGN / ENGINE / VIEW
+//   • Hover tooltip shows the full panel title
+//   • Animated "no panels" hint when all closed
+// ---------------------------------------------------------------------------
+void GUIManager::showWindowTabBar(
+    bool& showProfiler, bool& showMemory, bool& showECS,
+    bool& showWorldEditor, bool& showSettings,
+    bool& showSoundEditor, bool& showBlockDesigner,
+    bool& showMobDesigner, bool& showInteractionEditor,
+    bool& showToolDesigner, bool& showWeatherDesigner,
+    bool& showSoundDesigner, bool& showAdvWorldEditor,
+    bool& showTextureDesigner)
+{
+    // Build list of ALL panels — only render chips for open ones.
+    PanelDesc panels[] = {
+        { "World Editor",     "World Editor",          &showWorldEditor,       0.36f, 0.61f, 0.84f },
+        { "Adv. World",       "Advanced World Editor", &showAdvWorldEditor,    0.36f, 0.61f, 0.84f },
+        { "Blocks",           "Block Designer",        &showBlockDesigner,     0.62f, 0.40f, 0.88f },
+        { "Mobs",             "Mob Designer",          &showMobDesigner,       0.62f, 0.40f, 0.88f },
+        { "Textures",         "Texture Designer",      &showTextureDesigner,   0.62f, 0.40f, 0.88f },
+        { "Tools",            "Tool Designer",         &showToolDesigner,      0.62f, 0.40f, 0.88f },
+        { "Weather",          "Weather Designer",      &showWeatherDesigner,   0.62f, 0.40f, 0.88f },
+        { "Sound Designer",   "Sound Designer",        &showSoundDesigner,     0.62f, 0.40f, 0.88f },
+        { "Engine",           "Game Engine Editor",    &showInteractionEditor, 0.90f, 0.62f, 0.20f },
+        { "Sound Editor",     "Sound Editor",          &showSoundEditor,       0.90f, 0.62f, 0.20f },
+        { "Profiler",         "Engine Profiler",       &showProfiler,          0.28f, 0.82f, 0.50f },
+        { "Memory",           "Memory Inspector",      &showMemory,            0.28f, 0.82f, 0.50f },
+        { "ECS",              "ECS Editor",            &showECS,               0.28f, 0.82f, 0.50f },
+        { "Preferences",      "Preferences",           &showSettings,          0.28f, 0.82f, 0.50f },
+    };
+    constexpr int kCount = (int)(sizeof(panels) / sizeof(panels[0]));
+
+    int openCount = 0;
+    for (int i = 0; i < kCount; ++i)
+        if (*panels[i].flag) ++openCount;
+
+    const float menuBarH = ImGui::GetFrameHeightWithSpacing();
+    ImGuiViewport* vp = ImGui::GetMainViewport();
+    constexpr float kBarH = 40.0f;  // Taller bar for better click targets
+
+    ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x, vp->WorkPos.y + menuBarH));
+    ImGui::SetNextWindowSize(ImVec2(vp->WorkSize.x, kBarH));
+    ImGui::SetNextWindowViewport(vp->ID);
+
+    const ImGuiWindowFlags flags =
+        ImGuiWindowFlags_NoDecoration    |
+        ImGuiWindowFlags_NoNav           |
+        ImGuiWindowFlags_NoMove          |
+        ImGuiWindowFlags_NoSavedSettings |
+        ImGuiWindowFlags_NoBringToFrontOnFocus;
+
+    // Slight gradient background: slightly lighter than menu bar
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,  ImVec2(10.0f, 0.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,    ImVec2(4.0f, 0.0f));
+    ImGui::PushStyleColor(ImGuiCol_WindowBg,  ImVec4(0.060f, 0.062f, 0.080f, 1.00f));
+    ImGui::PushStyleColor(ImGuiCol_Border,    ImVec4(0.14f,  0.17f,  0.25f,  0.70f));
+
+    ImGui::Begin("##PanelTabBar", nullptr, flags);
+
+    // Draw a subtle top border line
+    {
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        ImVec2 p = ImGui::GetWindowPos();
+        float w  = ImGui::GetWindowWidth();
+        dl->AddLine(ImVec2(p.x, p.y), ImVec2(p.x + w, p.y),
+                    IM_COL32(50, 70, 110, 160), 1.0f);
+    }
+
+    if (openCount == 0) {
+        // Empty-state hint
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.25f, 0.28f, 0.36f, 1.00f));
+        ImGui::SetCursorPosY((kBarH - ImGui::GetTextLineHeight()) * 0.5f);
+        ImGui::TextUnformatted("  No panels open  —  use the menus or toolbar shortcuts to open one");
+        ImGui::PopStyleColor();
+    }
+
+    // Helper: draw a small coloured category label
+    auto drawGroupLabel = [&](const char* lbl, float r, float g, float b) {
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(r * 0.7f, g * 0.7f, b * 0.7f, 0.80f));
+        ImGui::SetCursorPosY((kBarH - ImGui::GetTextLineHeight()) * 0.5f);
+        ImGui::TextUnformatted(lbl);
+        ImGui::PopStyleColor();
+        ImGui::SameLine(0.0f, 4.0f);
+        // tiny vertical separator
+        float cy = ImGui::GetCursorScreenPos().y + (kBarH - ImGui::GetTextLineHeight()) * 0.5f - 2.0f;
+        float cx = ImGui::GetCursorScreenPos().x;
+        ImGui::GetWindowDrawList()->AddRectFilled(
+            ImVec2(cx, cy), ImVec2(cx + 1.0f, cy + ImGui::GetTextLineHeight() + 4.0f),
+            IM_COL32(r * 200, g * 200, b * 200, 80));
+        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 4.0f);
+    };
+
+    // Group tracking for labels
+    struct GroupInfo { float r, g, b; const char* label; };
+    const GroupInfo kGroups[] = {
+        { 0.36f, 0.61f, 0.84f, "WORLD" },
+        { 0.62f, 0.40f, 0.88f, "DESIGN" },
+        { 0.90f, 0.62f, 0.20f, "ENGINE" },
+        { 0.28f, 0.82f, 0.50f, "VIEW" },
+    };
+    auto getGroupIdx = [&](int panelIdx) -> int {
+        if (panelIdx <= 1) return 0;
+        if (panelIdx <= 7) return 1;
+        if (panelIdx <= 9) return 2;
+        return 3;
+    };
+
+    int lastGroup = -1;
+    bool firstChip = true;
+
+    for (int i = 0; i < kCount; ++i) {
+        if (!(*panels[i].flag)) continue;
+
+        const float r = panels[i].r, g = panels[i].g, b = panels[i].b;
+        const float chipH = kBarH - 10.0f;  // vertical padding = 5px each side
+
+        // Group label on first chip of a new group
+        int grp = getGroupIdx(i);
+        if (grp != lastGroup) {
+            if (!firstChip) {
+                // Group separator
+                ImGui::SameLine(0.0f, 14.0f);
+                float cy = ImGui::GetCursorScreenPos().y + (kBarH - chipH) * 0.5f;
+                float cx = ImGui::GetCursorScreenPos().x;
+                ImGui::GetWindowDrawList()->AddRectFilled(
+                    ImVec2(cx, cy), ImVec2(cx + 1.0f, cy + chipH),
+                    IM_COL32(60, 70, 95, 140));
+                ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 8.0f);
+            }
+            drawGroupLabel(kGroups[grp].label, kGroups[grp].r, kGroups[grp].g, kGroups[grp].b);
+            lastGroup = grp;
+        } else if (!firstChip) {
+            ImGui::SameLine(0.0f, 3.0f);
+        }
+
+        firstChip = false;
+
+        // ── Chip: background + coloured left accent bar ─────────────────────
+        ImVec2 chipPos = ImGui::GetCursorScreenPos();
+        chipPos.y += (kBarH - chipH) * 0.5f;
+
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding,   4.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,    ImVec2(10.0f, 3.0f));
+        ImGui::PushStyleColor(ImGuiCol_Button,
+            ImVec4(r*0.14f, g*0.14f, b*0.14f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
+            ImVec4(r*0.28f, g*0.28f, b*0.28f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive,
+            ImVec4(r*0.45f, g*0.45f, b*0.45f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_Text,
+            ImVec4(std::min(r*1.6f, 1.0f), std::min(g*1.6f, 1.0f), std::min(b*1.6f, 1.0f), 1.0f));
+
+        ImGui::SetCursorPosY((kBarH - chipH) * 0.5f);
+        char chipID[64];
+        snprintf(chipID, sizeof(chipID), "%s##chip%d", panels[i].label, i);
+        if (ImGui::Button(chipID, ImVec2(0.0f, chipH))) {
+            *panels[i].flag = true;
+            ImGui::SetWindowFocus(panels[i].winName);
+        }
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+            ImGui::SetTooltip("Focus  %s", panels[i].winName);
+
+        // Draw 3 px coloured left accent bar over the button
+        {
+            ImVec2 rMin = ImGui::GetItemRectMin();
+            ImVec2 rMax = ImGui::GetItemRectMax();
+            ImGui::GetWindowDrawList()->AddRectFilled(
+                ImVec2(rMin.x, rMin.y + 2.0f),
+                ImVec2(rMin.x + 3.0f, rMax.y - 2.0f),
+                IM_COL32((uint8_t)(r * 220), (uint8_t)(g * 220), (uint8_t)(b * 220), 230),
+                1.5f);
+        }
+
+        ImGui::PopStyleColor(4);
+        ImGui::PopStyleVar(3);
+
+        // ── Close × ─────────────────────────────────────────────────────────
+        ImGui::SameLine(0.0f, 0.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding,   4.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,    ImVec2(3.0f, 3.0f));
+        ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.80f, 0.15f, 0.15f, 0.75f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(0.65f, 0.08f, 0.08f, 1.00f));
+        ImGui::PushStyleColor(ImGuiCol_Text,          ImVec4(0.40f, 0.44f, 0.52f, 1.00f));
+
+        ImGui::SetCursorPosY((kBarH - chipH) * 0.5f);
+        char closeID[64];
+        snprintf(closeID, sizeof(closeID), "x##close%d", i);
+        if (ImGui::Button(closeID, ImVec2(18.0f, chipH)))
+            *panels[i].flag = false;
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+            ImGui::SetTooltip("Close  %s", panels[i].label);
+
+        ImGui::PopStyleColor(4);
+        ImGui::PopStyleVar(3);
+    }
+
+    ImGui::End();
+    ImGui::PopStyleColor(2);
+    ImGui::PopStyleVar(3);
+}
+
 void GUIManager::shutdown() {
     if (!m_initialized) return;
 
@@ -996,8 +1526,7 @@ void GUIManager::showMemoryInspector(size_t arenaOffset, size_t arenaSize, size_
         ImGui::ProgressBar(usedMB / totalMB, ImVec2(-1.0f, 0.0f));
     }
 
-    ImGui::Separator();
-    ImGui::Text("Custom Allocators:");
+    ImGui::SeparatorText("Custom Allocators");
 
     const float arenaRatio = (arenaSize > 0) ? (float)((double)arenaOffset / (double)arenaSize) : 0.0f;
     ImGui::Text("Arena: %zu / %zu bytes", arenaOffset, arenaSize);
@@ -1015,7 +1544,7 @@ void GUIManager::showECSEditor() {
 
     ImGui::Begin("ECS Editor");
     ImGui::TextUnformatted("(Scaffold) Entity/component editing hooks go here.");
-    ImGui::Separator();
+    ImGui::SeparatorText("Entities");
     ImGui::Text("Entities: %d", 1);
 
     if (ImGui::CollapsingHeader("Player", ImGuiTreeNodeFlags_DefaultOpen)) {

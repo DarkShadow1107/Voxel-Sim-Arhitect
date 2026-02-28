@@ -680,6 +680,12 @@ void GameRegistry::init() {
     setBreakProps(BLOCK_BRICKS, 2.0f, "pickaxe", 1, 6.0f);
     setBreakProps(BLOCK_ICE, 0.5f, "pickaxe", 0, 0.5f);
     setBreakProps(BLOCK_FIRE, 0.0f, "", 0, 0.0f, 15);
+    // New biome blocks (IDs reuse existing registry entries)
+    setBreakProps(BLOCK_GRAVEL,         0.6f, "shovel", 0, 0.6f, 0, true);   // gravity-affected
+    setBreakProps(BLOCK_ASH,            0.5f, "shovel", 0, 0.5f);
+    setBreakProps(BLOCK_BASALT,         2.5f, "pickaxe", 1, 8.0f);
+    setBreakProps(BLOCK_PUMICE,         0.9f, "pickaxe", 0, 1.5f);
+    setBreakProps(BLOCK_SCORCHED_GRASS, 0.6f, "shovel",  0, 0.5f);
 
     // Special drops: coal ore drops coal (itself for now), diamond ore drops diamond
     // Stone drops cobblestone
@@ -766,6 +772,13 @@ void GameRegistry::init() {
     setPhysics(BLOCK_BIRCH_LEAVES,  0.6f, 0.0f, 1,  true,  60, false, 0);
     setPhysics(BLOCK_CHERRY_WOOD,   0.6f, 0.0f, 15, true, 300, false, 0);
     setPhysics(BLOCK_CHERRY_LEAVES, 0.6f, 0.0f, 1,  true,  60, false, 0);
+
+    // New biome block physics (inorganic / non-flammable)
+    setPhysics(BLOCK_GRAVEL,         0.6f, 0.0f, 15, false, 0, false, 0);
+    setPhysics(BLOCK_ASH,            0.6f, 0.0f, 15, false, 0, false, 0);
+    setPhysics(BLOCK_BASALT,         0.7f, 0.0f, 15, false, 0, false, 0);
+    setPhysics(BLOCK_PUMICE,         0.6f, 0.0f, 15, false, 0, false, 0);
+    setPhysics(BLOCK_SCORCHED_GRASS, 0.6f, 0.0f, 15, false, 0, false, 0);
 
     // Wool variants (IDs 46-61)
     for (uint8_t wid = 46; wid <= 61; ++wid) {

@@ -535,7 +535,7 @@ Vec3 MobAI::getSheepColor(SheepColor color) {
     }
 }
 
-void MobAI::spawnMobsInChunk(Registry& registry, Chunk* chunk, int chunkX, int chunkZ, FastNoiseLite& biomeNoise, FastNoiseLite& continentalNoise) {
+void MobAI::spawnMobsInChunk(Registry& registry, Chunk* chunk, int chunkX, int chunkZ, FastNoiseLite& biomeNoise, FastNoiseLite& continentalNoise, FastNoiseLite& mountainNoise) {
     if (!chunk) return;
 
     // Chance to spawn pack in this chunk: 25%
@@ -551,7 +551,7 @@ void MobAI::spawnMobsInChunk(Registry& registry, Chunk* chunk, int chunkX, int c
     float wx = (float)(chunkX * Chunk::SizeX + cx);
     float wz = (float)(chunkZ * Chunk::SizeZ + cz);
 
-    BiomeType biome = Chunk::getBiomeAt(biomeNoise, continentalNoise, wx, wz);
+    BiomeType biome = Chunk::getBiomeAt(biomeNoise, continentalNoise, mountainNoise, wx, wz);
 
     // Determine Mob Type based on Biome
     std::vector<MobType> possibleMobs;
@@ -567,6 +567,10 @@ void MobAI::spawnMobsInChunk(Registry& registry, Chunk* chunk, int chunkX, int c
         possibleMobs = {MOB_COW, MOB_SHEEP, MOB_PIG, MOB_DOG, MOB_RABBIT, MOB_ZOMBIE};
     } else if (biome == BIOME_PLAINS) {
         possibleMobs = {MOB_COW, MOB_SHEEP, MOB_PIG, MOB_CHICKEN, MOB_DOG, MOB_RABBIT, MOB_ZOMBIE, MOB_SKELETON, MOB_CREEPER, MOB_VILLAGER};
+    } else if (biome == BIOME_ASHWORLD) {
+        possibleMobs = {MOB_ZOMBIE, MOB_SKELETON, MOB_CREEPER};
+    } else if (biome == BIOME_MOUNTAINS) {
+        possibleMobs = {MOB_SHEEP, MOB_RABBIT, MOB_BIRD, MOB_SKELETON};
     } else { // Default
          possibleMobs = {MOB_COW, MOB_SHEEP, MOB_PIG, MOB_CHICKEN, MOB_DOG, MOB_RABBIT, MOB_ZOMBIE, MOB_SKELETON, MOB_CREEPER};
     }

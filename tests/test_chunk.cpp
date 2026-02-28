@@ -235,28 +235,28 @@ TEST_CASE("Chunk: Terrain structural invariants hold after generation", "[chunk]
 
 TEST_CASE("Chunk: getBiomeAt() always returns a valid BiomeType", "[chunk][biome]") {
     Chunk chunk;
-    FastNoiseLite bn, cn;
+    FastNoiseLite bn, cn, mn;
     // Test a grid of world positions
     for (int i = -3; i <= 3; ++i) {
         for (int j = -3; j <= 3; ++j) {
-            BiomeType b = chunk.getBiomeAt(bn, cn, (float)(i * 128), (float)(j * 128));
+            BiomeType b = chunk.getBiomeAt(bn, cn, mn, (float)(i * 128), (float)(j * 128));
             INFO("biome at (" << i*128 << ", " << j*128 << "): " << (int)b);
             REQUIRE(b >= BIOME_POLAR);
-            REQUIRE(b <= BIOME_OCEAN);
+            REQUIRE(b <= BIOME_MOUNTAINS);
         }
     }
 }
 
 TEST_CASE("Chunk: Distinct biome seeds produce distinct biome distributions", "[chunk][biome]") {
     Chunk chunk;
-    FastNoiseLite bn1, cn1, bn2, cn2;
-    bn1.SetSeed(1); cn1.SetSeed(10);
-    bn2.SetSeed(99); cn2.SetSeed(990);
+    FastNoiseLite bn1, cn1, mn1, bn2, cn2, mn2;
+    bn1.SetSeed(1); cn1.SetSeed(10); mn1.SetSeed(2);
+    bn2.SetSeed(99); cn2.SetSeed(990); mn2.SetSeed(100);
 
     std::set<int> biomes1, biomes2;
     for (int i = 0; i < 20; ++i) {
-        biomes1.insert((int)chunk.getBiomeAt(bn1, cn1, (float)(i * 200), 0.0f));
-        biomes2.insert((int)chunk.getBiomeAt(bn2, cn2, (float)(i * 200), 0.0f));
+        biomes1.insert((int)chunk.getBiomeAt(bn1, cn1, mn1, (float)(i * 200), 0.0f));
+        biomes2.insert((int)chunk.getBiomeAt(bn2, cn2, mn2, (float)(i * 200), 0.0f));
     }
     // Each noise set should produce at least one biome result
     REQUIRE(!biomes1.empty());

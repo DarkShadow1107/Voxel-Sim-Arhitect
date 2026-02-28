@@ -81,6 +81,8 @@ public:
     const std::vector<std::pair<int, int>>& getNewChunks() const { return m_newlyGeneratedChunks; }
     void clearNewChunks() { m_newlyGeneratedChunks.clear(); }
 
+    const std::vector<std::pair<int, int>>& getRemovedChunks() const { return m_removedChunks; }
+
     int getRenderDistance() const { return m_renderDistance; }
     void setRenderDistance(int d) { m_renderDistance = d; }
     size_t getChunkCount() const { return m_chunks.size(); }
@@ -93,6 +95,7 @@ private:
     std::unordered_map<uint64_t, std::unique_ptr<ChunkData>> m_chunks;
     std::unordered_set<uint64_t> m_generatingChunks;
     std::vector<std::pair<int, int>> m_newlyGeneratedChunks;
+    std::vector<std::pair<int, int>> m_removedChunks;
     int m_renderDistance = 4;
 
     struct GenResult {

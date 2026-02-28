@@ -12,6 +12,8 @@
 #include "WorldEditor.hpp"
 #include "SoundDesigner.hpp"
 #include "TextureDesigner.hpp"
+#include "UIToolbar.hpp"
+#include "HelperWindow.hpp"
 
 struct GLFWwindow;
 class Texture;
@@ -40,6 +42,16 @@ public:
                          bool& showSoundDesigner, bool& showAdvWorldEditor,
                          bool& showTextureDesigner);
 
+    // Window tab bar — thin secondary row showing every open panel as a closeable chip.
+    // Call each frame immediately after showMainMenuBar().
+    void showWindowTabBar(bool& showProfiler, bool& showMemory, bool& showECS,
+                          bool& showWorldEditor, bool& showSettings,
+                          bool& showSoundEditor, bool& showBlockDesigner,
+                          bool& showMobDesigner, bool& showInteractionEditor,
+                          bool& showToolDesigner, bool& showWeatherDesigner,
+                          bool& showSoundDesigner, bool& showAdvWorldEditor,
+                          bool& showTextureDesigner);
+
     // Panels that stay in GUIManager
     void showSettings(bool* open, bool& vsync, bool& wireframe,
                       bool& fullscreen, bool& backfaceCulling, class Renderer& renderer);
@@ -57,6 +69,9 @@ public:
     void showSoundDesigner(bool* open)      { m_soundDesigner.show(open); }
     void showTextureDesigner(bool* open)    { m_textureDesigner.show(open, m_atlasPtr); }
     void showProfiler(float frameTime)      { m_profiler.show(frameTime, m_vsync, m_window); }
+    // Show the standalone help / reference window; also called internally by the Help menu.
+    void showHelperWindow()                 { m_helperWindow.show(); }
+    void openHelperWindow()                 { m_helperWindow.open(); }
 
     WeatherDesigner& getWeatherDesigner()   { return m_weatherDesigner; }
     WorldEditor& getWorldEditor()           { return m_worldEditor; }
@@ -92,4 +107,5 @@ private:
     WorldEditor    m_worldEditor;
     SoundDesigner  m_soundDesigner;
     TextureDesigner m_textureDesigner;
+    HelperWindow   m_helperWindow;
 };

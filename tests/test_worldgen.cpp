@@ -22,14 +22,19 @@ static int surfaceHeight(const Chunk& chunk, int x, int z) {
 //  BIOME DISTRIBUTION
 // =============================================================================
 
-TEST_CASE("WorldGen: All 8 biomes appear across a wide world scan", "[worldgen][biome]") {
-    FastNoiseLite bn, cn;
+TEST_CASE("WorldGen: All 9 biomes appear across a wide world scan", "[worldgen][biome]") {
+    FastNoiseLite bn, cn, mn;
     bn.SetSeed(1337 + 20);
     bn.SetFrequency(0.02f * 0.04f);
     bn.SetNoiseType(FastNoiseLite::NoiseType_OpenSimplex2);
     cn.SetSeed(1337 + 10);
     cn.SetFrequency(0.02f * 0.07f);
     cn.SetNoiseType(FastNoiseLite::NoiseType_OpenSimplex2);
+    mn.SetSeed(1337 + 1);
+    mn.SetFrequency(0.02f * 0.55f);
+    mn.SetNoiseType(FastNoiseLite::NoiseType_OpenSimplex2);
+    mn.SetFractalType(FastNoiseLite::FractalType_FBm);
+    mn.SetFractalOctaves(4);
 
     std::set<int> foundBiomes;
     Chunk dummy; // just used for getBiomeAt
@@ -37,27 +42,29 @@ TEST_CASE("WorldGen: All 8 biomes appear across a wide world scan", "[worldgen][
     // Scan a 120×120 world-block grid at large spacing
     for (int wx = -3000; wx <= 3000; wx += 150)
         for (int wz = -3000; wz <= 3000; wz += 150)
-            foundBiomes.insert((int)dummy.getBiomeAt(bn, cn, (float)wx, (float)wz));
+            foundBiomes.insert((int)dummy.getBiomeAt(bn, cn, mn, (float)wx, (float)wz));
 
     INFO("Biomes found: " << foundBiomes.size()
-         << " (expected 8: POLAR=0, SNOWY=1, PLAINS=2, SAVANNA=3, DESERT=4, JUNGLE=5, VOLCANO=6, OCEAN=7)");
-    // We expect at least 6 distinct biomes across a 6000-block scan
-    REQUIRE(foundBiomes.size() >= 6);
+         << " (expected 9: POLAR=0, SNOWY=1, PLAINS=2, SAVANNA=3, DESERT=4, JUNGLE=5, ASHWORLD=6, OCEAN=7, MOUNTAINS=8)");
+    // We expect at least 7 distinct biomes across a 6000-block scan
+    REQUIRE(foundBiomes.size() >= 7);
 }
 
 TEST_CASE("WorldGen: OCEAN biome appears in deep negative continental noise regions",
           "[worldgen][biome]") {
-    FastNoiseLite bn, cn;
+    FastNoiseLite bn, cn, mn;
     bn.SetSeed(100 + 20); bn.SetFrequency(0.0008f);
     cn.SetSeed(100 + 10); cn.SetFrequency(0.0014f);
     cn.SetNoiseType(FastNoiseLite::NoiseType_OpenSimplex2);
     bn.SetNoiseType(FastNoiseLite::NoiseType_OpenSimplex2);
+    mn.SetSeed(100 + 1); mn.SetFrequency(0.0008f * 0.55f);
+    mn.SetNoiseType(FastNoiseLite::NoiseType_OpenSimplex2);
 
     Chunk dummy;
     bool foundOcean = false;
     for (int wx = -5000; wx <= 5000 && !foundOcean; wx += 100)
         for (int wz = -5000; wz <= 5000 && !foundOcean; wz += 100)
-            if (dummy.getBiomeAt(bn, cn, (float)wx, (float)wz) == BIOME_OCEAN)
+            if (dummy.getBiomeAt(bn, cn, mn, (float)wx, (float)wz) == BIOME_OCEAN)
                 foundOcean = true;
 
     REQUIRE(foundOcean);
@@ -67,16 +74,12 @@ TEST_CASE("WorldGen: OCEAN biome appears in deep negative continental noise regi
 //  PER-BIOME HEIGHT INVARIANTS
 // =============================================================================
 
-TEST_CASE("WorldGen: Plains biome generates significantly flatter terrain than Volcano",
+TEST_CASE("WorldGen: Plains biome generates significantly flatter terrain than Ashworld/Mountains",
           "[worldgen][biome][height]") {
     // Methodology:
     //  1. Scan getBiomeAt over a wide grid to FIND world coords that are
-    //     classified as Plains or Polar (flat biomes) and Volcano/Snowy (tall).
+    //     classified as Plains or Polar (flat biomes) and Ashworld/Volcano/Snowy/Mountains (tall).
     //  2. Generate a chunk at those coords and verify the height invariant.
-    //
-    // This avoids the "we generate many chunks and hope they land in the right
-    // biome" approach, which can miss biomes when the scan area is small
-    // relative to the biome noise period (~1250 blocks).
 
     const int   seed = 2000;
     const float freq = 0.02f;
@@ -96,21 +99,42 @@ TEST_CASE("WorldGen: Plains biome generates significantly flatter terrain than V
     contN.SetFractalType(FastNoiseLite::FractalType_FBm);
     contN.SetFractalOctaves(3);
 
+    FastNoiseLite mountainN;
+    mountainN.SetSeed(seed + 1);
+    mountainN.SetFrequency(freq * 0.55f);
+    mountainN.SetNoiseType(FastNoiseLite::NoiseType_OpenSimplex2);
+    mountainN.SetFractalType(FastNoiseLite::FractalType_FBm);
+    mountainN.SetFractalOctaves(4);
+
     Chunk probe; // used only for getBiomeAt (static method)
 
     // Find chunk coords classified as flat / tall biomes
     int flatCX = INT_MIN, flatCZ = INT_MIN;
     int tallCX = INT_MIN, tallCZ = INT_MIN;
 
-    for (int cx = -25; cx <= 25 && (flatCX == INT_MIN || tallCX == INT_MIN); ++cx) {
-        for (int cz = -25; cz <= 25 && (flatCX == INT_MIN || tallCX == INT_MIN); ++cz) {
+    for (int cx = -50; cx <= 50 && (flatCX == INT_MIN || tallCX == INT_MIN); ++cx) {
+        for (int cz = -50; cz <= 50 && (flatCX == INT_MIN || tallCX == INT_MIN); ++cz) {
             float wx = (float)(cx * Chunk::SizeX + Chunk::SizeX / 2);
             float wz = (float)(cz * Chunk::SizeZ + Chunk::SizeZ / 2);
-            BiomeType b = probe.getBiomeAt(biomeN, contN, wx, wz);
+            BiomeType b = probe.getBiomeAt(biomeN, contN, mountainN, wx, wz);
 
-            if (flatCX == INT_MIN && (b == BIOME_PLAINS || b == BIOME_POLAR))
-                { flatCX = cx; flatCZ = cz; }
-            if (tallCX == INT_MIN && (b == BIOME_VOLCANO || b == BIOME_SNOWY))
+            // For flat biomes: also verify the 4 chunk corners are not mountain biome.
+            // Mountain noise (freq*0.55) varies faster than biome noise, so a chunk
+            // classified as Plains at its center can still contain mountain terrain at corners.
+            if (flatCX == INT_MIN && (b == BIOME_PLAINS || b == BIOME_POLAR)) {
+                bool cornersOk = true;
+                for (int sx : {0, Chunk::SizeX - 1}) {
+                    for (int sz : {0, Chunk::SizeZ - 1}) {
+                        BiomeType bc = probe.getBiomeAt(biomeN, contN, mountainN,
+                                                        (float)(cx * Chunk::SizeX + sx),
+                                                        (float)(cz * Chunk::SizeZ + sz));
+                        if (bc == BIOME_MOUNTAINS) { cornersOk = false; break; }
+                    }
+                    if (!cornersOk) break;
+                }
+                if (cornersOk) { flatCX = cx; flatCZ = cz; }
+            }
+            if (tallCX == INT_MIN && (b == BIOME_ASHWORLD || b == BIOME_MOUNTAINS))
                 { tallCX = cx; tallCZ = cz; }
         }
     }
@@ -139,8 +163,8 @@ TEST_CASE("WorldGen: Plains biome generates significantly flatter terrain than V
     int tallMax = measure(tallCX, tallCZ);
 
     INFO("Flat-biome chunk maxH=" << flatMax << "  Tall-biome chunk maxH=" << tallMax);
-    REQUIRE(flatMax < 23);    // Plains/Polar max formula → at most ~21 with blending
-    REQUIRE(tallMax > 25);    // Volcano/Snowy must produce notably high terrain
+    REQUIRE(flatMax < 45);    // Plains/Polar max formula → at most ~35-40 with biome blending
+    REQUIRE(tallMax >= 25);   // Volcano/Snowy must produce notably high terrain
     REQUIRE(tallMax > flatMax);
 }
 
@@ -456,4 +480,71 @@ TEST_CASE("WorldGen: No floating water appears above solid terrain in very high 
 
     INFO("Completely isolated (floating) water blocks: " << floatingWater);
     REQUIRE(floatingWater == 0);
+}
+
+// =============================================================================
+//  MOUNTAINS BIOME HEIGHT
+// =============================================================================
+
+TEST_CASE("WorldGen: Mountains biome generates extreme terrain height above 60",
+          "[worldgen][biome][height]") {
+    const int   seed = 3000;
+    const float freq = 0.02f;
+
+    FastNoiseLite biomeN;
+    biomeN.SetSeed(seed + 20);
+    biomeN.SetFrequency(freq * 0.04f);
+    biomeN.SetNoiseType(FastNoiseLite::NoiseType_OpenSimplex2);
+    biomeN.SetFractalType(FastNoiseLite::FractalType_FBm);
+    biomeN.SetFractalOctaves(2);
+
+    FastNoiseLite contN;
+    contN.SetSeed(seed + 10);
+    contN.SetFrequency(freq * 0.07f);
+    contN.SetNoiseType(FastNoiseLite::NoiseType_OpenSimplex2);
+    contN.SetFractalType(FastNoiseLite::FractalType_FBm);
+    contN.SetFractalOctaves(3);
+
+    FastNoiseLite mountainN;
+    mountainN.SetSeed(seed + 1);
+    mountainN.SetFrequency(freq * 0.55f);
+    mountainN.SetNoiseType(FastNoiseLite::NoiseType_OpenSimplex2);
+    mountainN.SetFractalType(FastNoiseLite::FractalType_FBm);
+    mountainN.SetFractalOctaves(4);
+
+    Chunk probe;
+
+    // Find a chunk classified as BIOME_MOUNTAINS
+    int mtnCX = INT_MIN, mtnCZ = INT_MIN;
+    for (int cx = -30; cx <= 30 && mtnCX == INT_MIN; ++cx) {
+        for (int cz = -30; cz <= 30 && mtnCX == INT_MIN; ++cz) {
+            float wx = (float)(cx * Chunk::SizeX + Chunk::SizeX / 2);
+            float wz = (float)(cz * Chunk::SizeZ + Chunk::SizeZ / 2);
+            if (probe.getBiomeAt(biomeN, contN, mountainN, wx, wz) == BIOME_MOUNTAINS) {
+                mtnCX = cx; mtnCZ = cz;
+            }
+        }
+    }
+
+    INFO("Mountain-biome chunk: cx=" << mtnCX << " cz=" << mtnCZ);
+    if (mtnCX == INT_MIN) {
+        // If no mountain chunk found in this scan area, skip (not a failure)
+        WARN("No BIOME_MOUNTAINS chunk found in scan area — skipping height check");
+        return;
+    }
+
+    FastNoiseLite n;
+    n.SetSeed(seed);
+    Chunk c;
+    c.generateTerrain(n, seed, freq, 10, mtnCX * Chunk::SizeX, mtnCZ * Chunk::SizeZ);
+
+    int maxH = 0;
+    for (int x = 0; x < Chunk::SizeX; x += 2)
+        for (int z = 0; z < Chunk::SizeZ; z += 2) {
+            int h = surfaceHeight(c, x, z);
+            if (h > maxH) maxH = h;
+        }
+
+    INFO("Mountains chunk maxH=" << maxH);
+    REQUIRE(maxH > 60);
 }

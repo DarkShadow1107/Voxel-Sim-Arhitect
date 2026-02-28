@@ -1,0 +1,114 @@
+╔═══════════════════════════════════════════════════════════════╗
+║          Voxel-Sim Architect  —  Test Run Log                 ║
+╚═══════════════════════════════════════════════════════════════╝
+  Version  : Beta-Dev
+  Date     : 2026-02-27 17:26:16
+  Log file : C:/Users/Alexandru Gabriel/Desktop/GitHub/Voxel-Sim Arhitect/logs/test_2026-02-27_17-26-16.log
+───────────────────────────────────────────────────────────────
+
+  ✓  WorldGen: All 9 biomes appear across a wide world scan
+    │  tags     : [biome][worldgen]
+    │  assert   : 1 ok    duration : 1 ms
+
+  ✓  WorldGen: OCEAN biome appears in deep negative continental noise regions
+    │  tags     : [biome][worldgen]
+    │  assert   : 1 ok    duration : 0 ms
+
+  ✓  WorldGen: Plains biome generates significantly flatter terrain than Ashworld/Mountains
+    │  tags     : [biome][height][worldgen]
+    │  assert   : 5 ok    duration : 26 ms
+
+  ✓  WorldGen: All surface heights are within [1, SizeY-2]
+    │  tags     : [height][worldgen]
+    │  assert   : 10240 ok    duration : 82 ms
+
+  ✓  WorldGen: y=0 is always bedrock after any generation
+    │  tags     : [structure][worldgen]
+    │  assert   : 6400 ok    duration : 330 ms
+
+  ✓  WorldGen: Top rows (SizeY-1 and SizeY-2) are AIR for low baseHeight
+    │  tags     : [structure][worldgen]
+    │  assert   : 64 ok    duration : 12 ms
+
+  ✓  WorldGen: Underground zone is predominantly stone/ore, not air
+    │  tags     : [structure][worldgen]
+    │  assert   : 1 ok    duration : 17 ms
+
+  ✓  WorldGen: Diamond ore only appears below y=20
+    │  tags     : [ore][worldgen]
+    │  assert   : 1 ok    duration : 106 ms
+
+  ✓  WorldGen: Coal ore appears more frequently than diamond ore
+    │  tags     : [ore][worldgen]
+    │  assert   : 1 ok    duration : 25 ms
+
+  ✓  WorldGen: Caves create air in the underground zone y=[5..60]
+    │  tags     : [caves][worldgen]
+    │  assert   : 1 ok    duration : 59 ms
+
+  ✓  WorldGen: Cave water only appears at low y values (underground lakes)
+    │  tags     : [caves][worldgen]
+    │  assert   : 1 ok    duration : 13 ms
+
+  ✓  WorldGen: Water source blocks appear on high-terrain chunks
+    │  tags     : [waterfall][worldgen]
+    │  assert   : 1 ok    duration : 3.46 s
+
+  ✓  WorldGen: River channels exist as sub-seaLevel depressions in non-desert biomes
+    │  tags     : [river][worldgen]
+    │  assert   : 1 ok    duration : 1.32 s
+
+  ✓  WorldGen: No floating water appears above solid terrain in very high biomes
+    │  tags     : [biome][water][worldgen]
+    │  assert   : 1 ok    duration : 71 ms
+
+  ✓  WorldGen: Mountains biome generates extreme terrain height above 60
+    │  tags     : [biome][height][worldgen]
+    │  assert   : 1 ok    duration : 41 ms
+
+  ✓  Fluid: WATER_TICK_DELAY is within acceptable range
+    │  tags     : [constants][fluid]
+    │  assert   : 3 ok    duration : 0 ms
+
+  ✓  Fluid: Lava tick delay is significantly higher than water
+    │  tags     : [constants][fluid]
+    │  assert   : 1 ok    duration : 0 ms
+
+  ✓  Fluid: Ocean-biome chunk has no fluid updates scheduled at generation
+    │  tags     : [fluid][ocean][worldgen]
+    │  assert   : 3 ok    duration : 27 ms
+
+  ✓  Fluid: Non-ocean chunk with water-adjacent-to-air schedules fluid updates
+    │  tags     : [fluid][worldgen]
+    │  assert   : 1 ok    duration : 638 ms
+
+  ✓  Fluid: Chunk pool does not exhaust for 50 sequential alloc/free cycles
+    │  tags     : [fluid][memory][pool]
+    │  assert   : 50 ok    duration : 626 ms
+
+  ✓  Fluid: 30 simultaneous chunks can coexist without pool exhaustion
+    │  tags     : [fluid][memory][pool]
+    │  assert   : 33 ok    duration : 322 ms
+
+  ✓  Fluid: 10 chunk terrain+cave+water generation completes under 4 seconds
+    │  tags     : [fluid][performance]
+    │  assert   : 1 ok    duration : 107 ms
+
+  ✓  Fluid: Water blocks placed above ocean sea level are within bounds
+    │  tags     : [fluid][placement]
+    │  assert   : 20762 ok    duration : 84 ms
+
+  ✓  Fluid: Fluid update list entries reference valid local coordinates
+    │  tags     : [fluid][placement]
+    │  assert   : 1617 ok    duration : 21 ms
+
+═══════════════════════════════════════════════════════════════
+  SUMMARY
+═══════════════════════════════════════════════════════════════
+  Test cases : 24 passed  /  0 failed  /  24 total
+  Assertions : 39191 passed  /  0 failed
+  Success    : 100.0%
+  Duration   : 7.40 s
+  Completed  : 2026-02-27 17:26:24
+  Status     : ALL TESTS PASSED  ✓
+═══════════════════════════════════════════════════════════════

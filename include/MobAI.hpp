@@ -86,7 +86,7 @@ public:
     static Vec3 getSheepColor(SheepColor color);
     
     // Spawning
-    static void spawnMobsInChunk(Registry& registry, Chunk* chunk, int chunkX, int chunkZ, FastNoiseLite& biomeNoise, FastNoiseLite& continentalNoise);
+    static void spawnMobsInChunk(Registry& registry, Chunk* chunk, int chunkX, int chunkZ, FastNoiseLite& biomeNoise, FastNoiseLite& continentalNoise, FastNoiseLite& mountainNoise);
 
 private:
     static void handleMovement(Mob& mob, Transform& transform, World& world, double dt);

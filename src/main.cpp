@@ -23,6 +23,9 @@
 #include "TaskScheduler.hpp"
 #include "Texture.hpp"
 #include "World.hpp"
+#include "WaterPhysics.hpp"  // legacy — kept for reference; FluidSimulator is the active system
+#include "FluidSimulator.hpp"
+#include "BiomeRegistry.hpp"
 #include "MobAI.hpp"
 #include "Registry.hpp"
 #include "IntroScreen.hpp"
@@ -40,6 +43,87 @@
 #include <fstream>
 #include <sstream>
 #include <cstring>
+#include <csignal>
+#include <ctime>
+#ifdef _WIN32
+#  include <windows.h>
+#endif
+
+// ---------------------------------------------------------------------------
+// Crash Logger — writes a timestamped report to logs/ next to the executable
+// ---------------------------------------------------------------------------
+namespace CrashLogger {
+
+static std::string s_logsDir;
+
+static std::string currentTimestamp() {
+    std::time_t t = std::time(nullptr);
+    char buf[32] = {};
+    std::strftime(buf, sizeof(buf), "%Y-%m-%d_%H-%M-%S", std::localtime(&t));
+    return buf;
+}
+
+static void writeReport(const std::string& reason, const std::string& detail = "") {
+    if (s_logsDir.empty()) return;
+    try {
+        std::filesystem::create_directories(s_logsDir);
+        std::string path = s_logsDir + "/crash_" + currentTimestamp() + ".log";
+        std::ofstream f(path);
+        if (!f.is_open()) return;
+        f << "=== Voxel-Sim Architect Crash Report ===\n";
+        f << "Timestamp : " << currentTimestamp() << "\n";
+        f << "Version   : Beta-Dev v0.6\n";
+        f << "Reason    : " << reason << "\n";
+        if (!detail.empty()) f << "Detail    : " << detail << "\n";
+#ifdef _WIN32
+        f << "Platform  : Windows\n";
+#else
+        f << "Platform  : Linux/Other\n";
+#endif
+        f << "\nIf the crash is reproducible, check the last operation in the engine log.\n";
+        f.flush();
+    } catch (...) {}
+}
+
+static void signalHandler(int sig) {
+    const char* name = "UNKNOWN";
+    switch (sig) {
+        case SIGSEGV: name = "SIGSEGV (Segmentation Fault)";   break;
+        case SIGABRT: name = "SIGABRT (Abort / Assert)";       break;
+        case SIGFPE:  name = "SIGFPE (Floating Point Error)";  break;
+        case SIGILL:  name = "SIGILL (Illegal Instruction)";   break;
+        case SIGTERM: name = "SIGTERM (Termination Request)";  break;
+    }
+    writeReport("Signal", name);
+    std::signal(sig, SIG_DFL);
+    std::raise(sig);
+}
+
+#ifdef _WIN32
+static LONG WINAPI sehHandler(EXCEPTION_POINTERS* ep) {
+    char detail[128] = {};
+    std::snprintf(detail, sizeof(detail),
+                  "Exception code 0x%08lX at address %p",
+                  static_cast<unsigned long>(ep->ExceptionRecord->ExceptionCode),
+                  ep->ExceptionRecord->ExceptionAddress);
+    writeReport("Unhandled SEH Exception", detail);
+    return EXCEPTION_CONTINUE_SEARCH;
+}
+#endif
+
+static void setup(const std::string& logsDir) {
+    s_logsDir = logsDir;
+    std::signal(SIGSEGV, signalHandler);
+    std::signal(SIGABRT, signalHandler);
+    std::signal(SIGFPE,  signalHandler);
+    std::signal(SIGILL,  signalHandler);
+    std::signal(SIGTERM, signalHandler);
+#ifdef _WIN32
+    SetUnhandledExceptionFilter(sehHandler);
+#endif
+}
+
+} // namespace CrashLogger
 
 enum WeatherType { WEATHER_CLEAR, WEATHER_RAIN, WEATHER_SNOW };
 
@@ -110,6 +194,18 @@ void loadUIConfig(bool& showProfiler, bool& showMemory, bool& showECS, bool& sho
 }
 
 int main() {
+    // --- Crash logger: must be set up before anything else ---
+    {
+#ifdef _WIN32
+        char exeBuf[MAX_PATH] = {};
+        GetModuleFileNameA(nullptr, exeBuf, MAX_PATH);
+        std::string logsDir = std::filesystem::path(exeBuf).parent_path().string() + "/logs";
+#else
+        std::string logsDir = std::filesystem::current_path().string() + "/logs";
+#endif
+        CrashLogger::setup(logsDir);
+    }
+
     std::cout << "Voxel-Sim Architect Engine Starting..." << std::endl;
     GameRegistry::getInstance().init();
 
@@ -122,13 +218,24 @@ int main() {
 
     FastNoiseLite biomeNoise;
     biomeNoise.SetSeed(1337 + 20); // Same seed as worldSeed + 20
-    biomeNoise.SetFrequency(0.02f * 0.05f); // Same frequency as worldFrequency * 0.05f
+    biomeNoise.SetFrequency(0.02f * 0.04f); // Matches Chunk.cpp: frequency * 0.04f
     biomeNoise.SetNoiseType(FastNoiseLite::NoiseType_OpenSimplex2);
+    biomeNoise.SetFractalType(FastNoiseLite::FractalType_FBm);
+    biomeNoise.SetFractalOctaves(2);
 
     FastNoiseLite continentalNoise;
     continentalNoise.SetSeed(1337 + 10);
-    continentalNoise.SetFrequency(0.02f * 0.08f);
+    continentalNoise.SetFrequency(0.02f * 0.07f); // Matches Chunk.cpp: frequency * 0.07f
     continentalNoise.SetNoiseType(FastNoiseLite::NoiseType_OpenSimplex2);
+    continentalNoise.SetFractalType(FastNoiseLite::FractalType_FBm);
+    continentalNoise.SetFractalOctaves(3);
+
+    FastNoiseLite mountainNoise;
+    mountainNoise.SetSeed(1337 + 1);
+    mountainNoise.SetFrequency(0.02f * 0.55f);
+    mountainNoise.SetNoiseType(FastNoiseLite::NoiseType_OpenSimplex2);
+    mountainNoise.SetFractalType(FastNoiseLite::FractalType_FBm);
+    mountainNoise.SetFractalOctaves(4);
     
     // 3. Multi-threaded Task Scheduler
     TaskScheduler scheduler(std::thread::hardware_concurrency());
@@ -176,7 +283,7 @@ int main() {
     bool isRaining = false;
     float playerOnFireSeconds = 0.0f;
     float playerHp = 20.0f;
-    Vec3  spawnPosition = {0.0f, 30.0f, 0.0f}; // Updated when a world is loaded
+    Vec3  spawnPosition = {0.0f, 50.0f, 0.0f}; // Updated when a world is loaded
     float playerDeathTimer = 0.0f;
     float playerHurtTimer = 0.0f;  // Red flash remaining after being hit
     float playerInvincTimer = 0.0f; // Invincibility frames after a hit
@@ -194,6 +301,7 @@ int main() {
     bool showECS = true;
     bool showWorldEditor = true;
     bool showSettings = false;
+    bool showEscMenu  = false;  // ESC in-game pause / audio modal (separate from Preferences)
     bool showSoundEditor = false;
     bool showBlockDesigner = false;
     bool showMobDesigner = false;
@@ -283,7 +391,7 @@ int main() {
     World world;
     int worldSeed = 1337;
     float worldFrequency = 0.02f;
-    int worldBaseHeight = 10;
+    int worldBaseHeight = 32;
     int renderDistance = 4;
     uint8_t selectedBlock = 1; // 1=Dirt, 2=Grass, 3=Stone
     int equippedToolId = 0;    // 0 = no tool (hand)
@@ -310,7 +418,7 @@ int main() {
     };
 
     Camera camera;
-    camera.setPosition({0.0f, 30.0f, 0.0f});
+    camera.setPosition({0.0f, (float)(worldBaseHeight + 20), 0.0f});
     {
         int fbW = 0, fbH = 0;
         glfwGetFramebufferSize(renderer.getWindow(), &fbW, &fbH);
@@ -369,21 +477,15 @@ int main() {
     uint8_t breakType = 0;
 
     auto lastTime = std::chrono::high_resolution_clock::now();
-    auto fluidKey = [](int x, int y, int z) -> int64_t {
-        return ((int64_t)((x + 32768) & 0xFFFF) << 32)
-             | ((int64_t)(y       & 0xFF  ) << 16)
-             | ((int64_t)((z + 32768) & 0xFFFF));
-    };
-    auto decodeFluidKey = [](int64_t k, int& ox, int& oy, int& oz) {
-        oz = (int)(k & 0xFFFF)         - 32768;
-        oy = (int)((k >> 16) & 0xFF);
-        ox = (int)((k >> 32) & 0xFFFF) - 32768;
-    };
-    std::unordered_map<int64_t, int> fluidDistances;
-    // Queue-based fluid propagation: newly placed/created blocks are enqueued and
-    // processed reliably each tick instead of relying on random sampling alone.
-    std::deque<int64_t> waterFluidQueue;
-    std::deque<int64_t> lavaFluidQueue;
+    // FluidSimulator (TDD §1) — event-driven dormant/active fluid state machine.
+    // Generation water/lava stays STATE_DORMANT until a neighbour block changes.
+    // ProcessTick() drains BlockUpdateEvents and transitions fluids to ACTIVE.
+    FluidSimulator fluidSim;
+    auto& fluidDistances  = fluidSim.distances();
+    auto& waterFluidQueue = fluidSim.waterQueue();
+    auto& lavaFluidQueue  = fluidSim.lavaQueue();
+    auto  fluidKey        = [](int x, int y, int z) -> int64_t { return FluidSimulator::encodeKey(x, y, z); };
+    auto  decodeFluidKey  = [](int64_t k, int& ox, int& oy, int& oz) { FluidSimulator::decodeKey(k, ox, oy, oz); };
 
     // Persistent mob part meshes — built once per (mobType, partIdx), reused every frame.
     // Previously these were created/uploaded/destroyed 80+ times per frame (critical bottleneck).
@@ -459,13 +561,19 @@ int main() {
             }
         }
 
-        // Spawn mobs in new chunks
+        // Spawn mobs in new chunks, and register generation fluids as dormant
         for (const auto& coord : world.getNewChunks()) {
             Chunk* c = world.getChunk(coord.first, coord.second);
             if (c) {
-                MobAI::spawnMobsInChunk(registry, c, coord.first, coord.second, biomeNoise, continentalNoise);
+                MobAI::spawnMobsInChunk(registry, c, coord.first, coord.second, biomeNoise, continentalNoise, mountainNoise);
+                // Mark all generation-placed water/lava as dormant — they won't
+                // spread until a neighbouring block is disturbed by the player.
+                fluidSim.registerChunk(c, coord.first, coord.second);
             }
         }
+        // Remove unloaded chunks from the dormant registry so m_activated doesn't leak.
+        for (const auto& coord : world.getRemovedChunks())
+            fluidSim.unregisterChunk(coord.first, coord.second);
 
         // Environmental Ambient Sounds Update
         {
@@ -529,6 +637,7 @@ int main() {
         ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport());
         
         gui.showMainMenuBar(showProfiler, showMemory, showECS, showWorldEditor, showSettings, showSoundEditor, showBlockDesigner, showMobDesigner, showInteractionEditor, showToolDesigner, showWeatherDesigner, showSoundDesigner, showAdvWorldEditor, showTextureDesigner);
+        gui.showWindowTabBar(showProfiler, showMemory, showECS, showWorldEditor, showSettings, showSoundEditor, showBlockDesigner, showMobDesigner, showInteractionEditor, showToolDesigner, showWeatherDesigner, showSoundDesigner, showAdvWorldEditor, showTextureDesigner);
 
         if (showProfiler) gui.showProfiler(deltaMs);
         if (showMemory) {
@@ -545,6 +654,7 @@ int main() {
         gui.showAdvWorldEditor(&showAdvWorldEditor);
         gui.showSoundDesigner(&showSoundDesigner);
         gui.showTextureDesigner(&showTextureDesigner);
+        gui.showHelperWindow();  // HelperWindow manages its own open/close state
         gui.coordinateMobBlockEdit(showBlockDesigner);
         if (showSettings) gui.showSettings(&showSettings, vsync, wireframe, fullscreen, backfaceCulling, renderer);
 
@@ -694,8 +804,63 @@ int main() {
                 ImGui::Text("Chunks: %zu", world.getChunkCount());
                 ImGui::EndGroup();
 
+                // ── Biome Name HUD ─────────────────────────────────────────────────────
+                // Displayed centre-bottom of viewport just above the hotbar.
+                // Uses the same noise thresholds as Chunk::getBiomeAt() for accuracy.
+                {
+                    static float     biomeUpdateTimer = 0.0f;
+                    static BiomeType currentBiome     = BIOME_PLAINS;
+
+                    biomeUpdateTimer += dt;
+                    if (biomeUpdateTimer >= 0.4f) {
+                        biomeUpdateTimer = 0.0f;
+                        const Vec3& cp = camera.position();
+                        float pwx = cp.x, pwz = cp.z;
+
+                        float cn_v = continentalNoise.GetNoise(pwx, pwz);
+                        if (cn_v < -0.30f) {
+                            currentBiome = BIOME_OCEAN;
+                        } else {
+                            float bn_v = biomeNoise.GetNoise(pwx, pwz);
+                            float mn_v = mountainNoise.GetNoise(pwx, pwz);
+                            if      (mn_v > 0.42f && bn_v > -0.18f && bn_v < 0.82f) {
+                                currentBiome = BIOME_MOUNTAINS;
+                            } else if (bn_v < -0.20f) {
+                                currentBiome = BIOME_POLAR;
+                            } else if (bn_v <  0.05f) {
+                                currentBiome = BIOME_SNOWY;
+                            } else if (bn_v <  0.35f) {
+                                currentBiome = BIOME_PLAINS;
+                            } else if (bn_v <  0.50f) {
+                                currentBiome = BIOME_SAVANNA;
+                            } else if (bn_v <  0.65f) {
+                                currentBiome = BIOME_DESERT;
+                            } else if (bn_v <  0.85f) {
+                                currentBiome = BIOME_JUNGLE;
+                            } else {
+                                currentBiome = BIOME_ASHWORLD;
+                            }
+                        }
+                    }
+
+                    const BiomeDef& bdef       = BiomeRegistry::get(currentBiome);
+                    const char*     biomeName  = bdef.name;
+                    ImU32 biomeTextColor       = IM_COL32(bdef.hudR, bdef.hudG, bdef.hudB, 220);
+
+                    // Centre-bottom pill — 26 px above the hotbar
+                    ImVec2 biomeTextSz = ImGui::CalcTextSize(biomeName);
+                    float  biomeBx = screenPos.x + (viewportSize.x - biomeTextSz.x) * 0.5f;
+                    float  biomeBy = screenPos.y + viewportSize.y - hbHeight - 46.0f;
+                    constexpr float kBiomePad = 9.0f;
+                    drawList->AddRectFilled(
+                        ImVec2(biomeBx - kBiomePad,              biomeBy - 4.0f),
+                        ImVec2(biomeBx + biomeTextSz.x + kBiomePad, biomeBy + biomeTextSz.y + 4.0f),
+                        IM_COL32(0, 0, 0, 110), 7.0f);
+                    drawList->AddText(ImVec2(biomeBx + 1.0f, biomeBy + 1.0f), IM_COL32(0, 0, 0, 100), biomeName);
+                    drawList->AddText(ImVec2(biomeBx, biomeBy), biomeTextColor, biomeName);
+                }
+
                 // ImGuizmo View Manipulator (Production-grade viewport compass)
-                ImGuizmo::SetOrthographic(false);
                 ImGuizmo::SetDrawlist();
                 ImGuizmo::SetRect(screenPos.x, screenPos.y, viewportSize.x, viewportSize.y);
 
@@ -1112,7 +1277,7 @@ int main() {
                     camera.setFovDegrees(fov);
                 }
                 if (ImGui::Button("Reset Camera")) {
-                    camera.setPosition({0.0f, 30.0f, 0.0f});
+                    camera.setPosition({0.0f, (float)(worldBaseHeight + 20), 0.0f});
                 }
             }
 
@@ -1170,9 +1335,10 @@ int main() {
                 ImGui::SameLine();
                 if (ImGui::Button("New World")) {
                     world.clear();
+                    fluidSim.clear();
                     loadedWorldFile.clear();
-                    camera.setPosition({0.0f, 30.0f, 0.0f});
-                    spawnPosition = {0.0f, 30.0f, 0.0f};
+                    camera.setPosition({0.0f, (float)(worldBaseHeight + 20), 0.0f});
+                    spawnPosition = {0.0f, (float)(worldBaseHeight + 20), 0.0f};
                     menuMode = false; // enter world mode immediately
                 }
 
@@ -1202,6 +1368,7 @@ int main() {
                         if (ImGui::Selectable("##worldEntry", &selected, ImGuiSelectableFlags_SpanAllColumns, ImVec2(0, 50))) {
                             WorldMetadata loadedMeta;
                             if (world.load(save.filename, loadedMeta)) {
+                                fluidSim.clear();
                                 std::strncpy(worldSaveName, loadedMeta.name, sizeof(worldSaveName) - 1);
                                 worldSaveName[sizeof(worldSaveName) - 1] = '\0';
                                 worldSeed = loadedMeta.seed;
@@ -1213,10 +1380,14 @@ int main() {
                                 // Update noise generators with loaded seed
                                 noise.SetSeed(worldSeed);
                                 biomeNoise.SetSeed(worldSeed + 20);
+                                biomeNoise.SetFrequency(worldFrequency * 0.04f);
                                 continentalNoise.SetSeed(worldSeed + 10);
+                                continentalNoise.SetFrequency(worldFrequency * 0.07f);
+                                mountainNoise.SetSeed(worldSeed + 1);
+                                mountainNoise.SetFrequency(worldFrequency * 0.55f);
 
-                                camera.setPosition({0.0f, 30.0f, 0.0f});
-                                spawnPosition = {0.0f, 30.0f, 0.0f}; // record spawn for respawn
+                                camera.setPosition({0.0f, (float)(worldBaseHeight + 20), 0.0f});
+                                spawnPosition = {0.0f, (float)(worldBaseHeight + 20), 0.0f}; // record spawn for respawn
                                 menuMode = false; // enter world mode so player can move immediately
                             }
                             showWorldList = false;
@@ -1524,17 +1695,11 @@ int main() {
                                     }
                                     world.setBlock(res.x, res.y, res.z, 0);
                                     AudioManager::getInstance().playBlockBreakSound(type, { (float)res.x, (float)res.y, (float)res.z }, camera.position());
-                                    
-                                    // Trigger nearby fluid updates
-                                    int dx[] = {1,-1,0,0,0,0}, dy[] = {0,0,1,-1,0,0}, dz[] = {0,0,0,0,1,-1};
-                                    for(int i=0; i<6; ++i) {
-                                        uint8_t nb = world.getBlock(res.x+dx[i], res.y+dy[i], res.z+dz[i]);
-                                        if (nb == BLOCK_WATER || nb == BLOCK_LAVA) {
-                                            // Immediate flow into the new hole
-                                            world.setBlock(res.x, res.y, res.z, nb);
-                                            break; 
-                                        }
-                                    }
+
+                                    // Activate any dormant generation fluids that now have a path to flow.
+                                    // This is the "block update" event: fluid only wakes up when a
+                                    // neighbour is disturbed, never spontaneously on generation.
+                                    fluidSim.onBlockChanged(res.x, res.y, res.z);
 
                                     breaking = false;
                                     breakProgress = 0.0f;
@@ -1564,10 +1729,9 @@ int main() {
                             if (res.hit) {
                                 world.setBlock(res.x + res.nx, res.y + res.ny, res.z + res.nz, selectedBlock);
                                 if (selectedBlock == BLOCK_WATER || selectedBlock == BLOCK_LAVA) {
-                                    int64_t pk = fluidKey(res.x + res.nx, res.y + res.ny, res.z + res.nz);
-                                    fluidDistances[pk] = 0;
-                                    if (selectedBlock == BLOCK_WATER) waterFluidQueue.push_back(pk);
-                                    else                               lavaFluidQueue.push_back(pk);
+                                    fluidSim.onFluidPlaced(
+                                        res.x + res.nx, res.y + res.ny, res.z + res.nz,
+                                        selectedBlock == BLOCK_LAVA);
                                 }
                                 inventory.counts[selectedBlock]--;
                             }
@@ -1738,6 +1902,18 @@ int main() {
                     }
                 }
 
+                // Hard floor: prevent player from falling below world boundary.
+                // y=0 is bedrock; player eye height is 1.6 above feet, so
+                // the minimum safe position is 1.65 (feet at y≥0.05, above bedrock).
+                {
+                    Vec3 p = camera.position();
+                    if (p.y < 1.65f) {
+                        p.y = 1.65f;
+                        camera.setPosition(p);
+                        if (verticalVelocity < 0.0f) verticalVelocity = 0.0f;
+                    }
+                }
+
                 // Block Selection
                 for (int i = 1; i <= 9; ++i) {
                     if (glfwGetKey(renderer.getWindow(), GLFW_KEY_0 + i) == GLFW_PRESS) {
@@ -1897,6 +2073,10 @@ int main() {
         waterFluidTimer += (float)dt;
         lavaFluidTimer  += (float)dt;
 
+        // Drain BlockUpdateEvents — transitions dormant generation fluids to ACTIVE
+        // when disturbed by a neighbouring block change. Called every frame.
+        fluidSim.processTick(world);
+
         auto tryFlow = [&](int x, int y, int z, uint8_t type) {
             if (y <= 1) return;
             int currentDist = 0;
@@ -2034,13 +2214,19 @@ int main() {
                 waterFluidQueue.pop_front();
                 int qx, qy, qz;
                 decodeFluidKey(key, qx, qy, qz);
-                if (world.getBlock(qx, qy, qz) == BLOCK_WATER)
+                // Double-guard: only flow if block is water AND not a dormant
+                // generation-placed fluid. Handles edge cases where a dormant
+                // block somehow ends up in the queue (e.g., chunk reload race).
+                if (world.getBlock(qx, qy, qz) == BLOCK_WATER
+                    && !fluidSim.isDormant(qx, qy, qz))
                     tryFlow(qx, qy, qz, BLOCK_WATER);
                 ++qProcessed;
             }
             // Cap queue to avoid unbounded growth from large water bodies
             while (waterFluidQueue.size() > 3000) waterFluidQueue.pop_front();
-            // --- Random sampling (secondary, keeps existing streams ticking) ---
+            // --- Random sampling (secondary, keeps active streams ticking) ---
+            // Dormant (generation-placed) fluids are excluded — they must be
+            // activated explicitly via fluidSim.onBlockChanged().
             int px = (int)std::floor(camera.position().x / Chunk::SizeX);
             int pz = (int)std::floor(camera.position().z / Chunk::SizeZ);
             for (int i = 0; i < 4; ++i) {
@@ -2050,7 +2236,8 @@ int main() {
                     int vx = rx * Chunk::SizeX + (rand() % Chunk::SizeX);
                     int vz = rz * Chunk::SizeZ + (rand() % Chunk::SizeZ);
                     int vy = rand() % (Chunk::SizeY - 2) + 1;
-                    if (world.getBlock(vx, vy, vz) == BLOCK_WATER)
+                    if (world.getBlock(vx, vy, vz) == BLOCK_WATER
+                        && !fluidSim.isDormant(vx, vy, vz))
                         tryFlow(vx, vy, vz, BLOCK_WATER);
                 }
             }
@@ -2066,7 +2253,8 @@ int main() {
                 lavaFluidQueue.pop_front();
                 int qx, qy, qz;
                 decodeFluidKey(key, qx, qy, qz);
-                if (world.getBlock(qx, qy, qz) == BLOCK_LAVA)
+                if (world.getBlock(qx, qy, qz) == BLOCK_LAVA
+                    && !fluidSim.isDormant(qx, qy, qz))
                     tryFlow(qx, qy, qz, BLOCK_LAVA);
                 ++qProcessed;
             }
@@ -2081,7 +2269,7 @@ int main() {
                     int vx = rx * Chunk::SizeX + (rand() % Chunk::SizeX);
                     int vz = rz * Chunk::SizeZ + (rand() % Chunk::SizeZ);
                     int vy = rand() % (Chunk::SizeY - 2) + 1;
-                    if (world.getBlock(vx, vy, vz) == BLOCK_LAVA)
+                    if (world.getBlock(vx, vy, vz) == BLOCK_LAVA && !fluidSim.isDormant(vx, vy, vz))
                         tryFlow(vx, vy, vz, BLOCK_LAVA);
                 }
             }
@@ -2624,61 +2812,95 @@ int main() {
             menuMode = true;
         }
 
-        if (glfwGetKey(renderer.getWindow(), GLFW_KEY_ESCAPE) == GLFW_PRESS && !showSettings) {
-            showSettings = true;
+        if (glfwGetKey(renderer.getWindow(), GLFW_KEY_ESCAPE) == GLFW_PRESS && !showEscMenu) {
+            showEscMenu = true;
             menuMode = true;
         }
+
+        // Ctrl+P — toggle Preferences window
+        if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_P))
+            showSettings = !showSettings;
 
         if (chatOpen) {
             // ... (keep chat UI)
         }
 
-        // Settings Menu
-        if (showSettings) {
-            ImGui::OpenPopup("Settings Menu");
-        }
+        // In-game pause / game menu (ESC)
+        // Replaced BeginPopupModal with a regular dockable window so the
+        // Preferences panel is never blocked by a modal dim-overlay.
+        if (showEscMenu) {
+            ImGui::SetNextWindowSize(ImVec2(380, 0), ImGuiCond_Appearing);
+            ImGui::SetNextWindowPos(
+                ImGui::GetMainViewport()->GetCenter(),
+                ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+            ImGuiWindowFlags pauseFlags = ImGuiWindowFlags_NoCollapse
+                                        | ImGuiWindowFlags_NoDocking
+                                        | ImGuiWindowFlags_AlwaysAutoResize;
+            if (ImGui::Begin("Game Menu", &showEscMenu, pauseFlags)) {
+                // ---- Header ----
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.9f, 0.85f, 0.4f, 1.0f));
+                ImGui::Text("  Voxel-Sim Architect");
+                ImGui::PopStyleColor();
+                ImGui::Separator();
 
-        if (ImGui::BeginPopupModal("Settings Menu", &showSettings, ImGuiWindowFlags_AlwaysAutoResize)) {
-            ImGui::Text("Audio Settings");
-            ImGui::Separator();
-            
-            float master = AudioManager::getInstance().getMasterVolume();
-            if (ImGui::SliderFloat("Master Volume", &master, 0.0f, 1.0f)) {
-                AudioManager::getInstance().setMasterVolume(master);
-            }
+                // ---- Audio Settings ----
+                if (ImGui::CollapsingHeader("Audio", ImGuiTreeNodeFlags_DefaultOpen)) {
+                    ImGui::Indent(8.0f);
+                    float master = AudioManager::getInstance().getMasterVolume();
+                    if (ImGui::SliderFloat("Master Volume", &master, 0.0f, 1.0f))
+                        AudioManager::getInstance().setMasterVolume(master);
 
-            float music = AudioManager::getInstance().getMusicVolume();
-            if (ImGui::SliderFloat("Music Volume", &music, 0.0f, 1.0f)) {
-                AudioManager::getInstance().setMusicVolume(music);
-            }
+                    float music = AudioManager::getInstance().getMusicVolume();
+                    if (ImGui::SliderFloat("Music Volume", &music, 0.0f, 1.0f))
+                        AudioManager::getInstance().setMusicVolume(music);
 
-            ImGui::Separator();
-            bool mobs = AudioManager::getInstance().isMobSoundsEnabled();
-            if (ImGui::Checkbox("Mob Sounds", &mobs)) {
-                AudioManager::getInstance().setMobSoundsEnabled(mobs);
-            }
+                    bool mobs = AudioManager::getInstance().isMobSoundsEnabled();
+                    if (ImGui::Checkbox("Mob Sounds", &mobs))
+                        AudioManager::getInstance().setMobSoundsEnabled(mobs);
+                    ImGui::SameLine(160);
+                    bool blks = AudioManager::getInstance().isBlockSoundsEnabled();
+                    if (ImGui::Checkbox("Block Sounds", &blks))
+                        AudioManager::getInstance().setBlockSoundsEnabled(blks);
 
-            bool blocks = AudioManager::getInstance().isBlockSoundsEnabled();
-            if (ImGui::Checkbox("Block Sounds", &blocks)) {
-                AudioManager::getInstance().setBlockSoundsEnabled(blocks);
-            }
+                    bool musicOn = AudioManager::getInstance().isMusicEnabled();
+                    if (ImGui::Checkbox("Background Music", &musicOn))
+                        AudioManager::getInstance().setMusicEnabled(musicOn);
+                    ImGui::Unindent(8.0f);
+                }
 
-            bool musicOn = AudioManager::getInstance().isMusicEnabled();
-            if (ImGui::Checkbox("Background Music", &musicOn)) {
-                AudioManager::getInstance().setMusicEnabled(musicOn);
-            }
+                // ---- Display Settings ----
+                if (ImGui::CollapsingHeader("Display", ImGuiTreeNodeFlags_DefaultOpen)) {
+                    ImGui::Indent(8.0f);
+                    if (ImGui::Checkbox("Fullscreen", &fullscreen))
+                        renderer.setFullscreen(fullscreen);
+                    ImGui::SameLine(160);
+                    if (ImGui::Checkbox("VSync", &vsync))
+                        renderer.setVSync(vsync);
+                    if (ImGui::Checkbox("Wireframe", &wireframe))
+                        renderer.setWireframe(wireframe);
+                    ImGui::SameLine(160);
+                    if (ImGui::Checkbox("Backface Culling", &backfaceCulling))
+                        renderer.setBackfaceCulling(backfaceCulling);
+                    ImGui::Unindent(8.0f);
+                }
 
-            ImGui::Separator();
-            if (ImGui::Checkbox("Fullscreen", &fullscreen)) {
-                renderer.setFullscreen(fullscreen);
-            }
+                ImGui::Separator();
 
-            ImGui::Separator();
-            if (ImGui::Button("Close", ImVec2(120, 0))) {
-                showSettings = false;
-                menuMode = false;
+                // ---- Actions ----
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.22f, 0.55f, 0.22f, 1.0f));
+                if (ImGui::Button("Open Preferences (Ctrl+P)", ImVec2(-1, 0))) {
+                    showSettings = true;
+                    showEscMenu  = false;
+                    menuMode     = false;
+                }
+                ImGui::PopStyleColor();
+                ImGui::Spacing();
+                if (ImGui::Button("Resume Game", ImVec2(-1, 0))) {
+                    showEscMenu = false;
+                    menuMode    = false;
+                }
             }
-            ImGui::EndPopup();
+            ImGui::End();
         }
 
         gui.endFrame();

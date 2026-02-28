@@ -90,6 +90,10 @@ set(SOURCES
     src/WorldEditor.cpp
     src/SoundDesigner.cpp
     src/TextureDesigner.cpp
+    src/WaterPhysics.cpp
+    src/FluidSimulator.cpp
+    src/BiomeRegistry.cpp
+    src/HelperWindow.cpp
     ${glfw_SOURCE_DIR}/deps/glad_gl.c
     ${imgui_SOURCE_DIR}/imgui.cpp
     ${imgui_SOURCE_DIR}/imgui_draw.cpp
@@ -110,7 +114,7 @@ endif()
 # Link libraries
 target_link_libraries(${PROJECT_NAME} glfw OpenGL::GL)
 if(WIN32)
-    target_link_libraries(${PROJECT_NAME} psapi comdlg32 powrprof pdh)
+    target_link_libraries(${PROJECT_NAME} psapi comdlg32 powrprof pdh dbghelp)
 endif()
 
 message(STATUS "Voxel-Sim Architect project configured with FetchContent.")

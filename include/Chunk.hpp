@@ -37,7 +37,12 @@ enum BlockType : uint8_t {
     BLOCK_ICE = 27,
     BLOCK_FIRE = 28,
     BLOCK_SNOW_LAYER = 29,
-    BLOCK_OBSIDIAN = 70      // registered in Registry.cpp; no live lava in generation
+    BLOCK_GRAVEL = 30,       // tan-grey aggregate — mountain scree
+    BLOCK_OBSIDIAN = 70,     // registered in Registry.cpp; no live lava in generation
+    BLOCK_PUMICE = 156,      // End Stone (0.80,0.80,0.60) — pale porous volcanic rock
+    BLOCK_ASH = 212,         // Gray Terracotta (0.30,0.30,0.30) — volcanic ash surface
+    BLOCK_SCORCHED_GRASS = 217, // Brown Terracotta (0.40,0.20,0.10) — burnt ground edges
+    BLOCK_BASALT = 220       // Black Terracotta (0.10,0.10,0.10) — dark volcanic rock
     // Fluid levels are stored separately in World::m_fluidLevels
     // (all 256 block IDs are occupied by the Minecraft block registry)
 };
@@ -49,8 +54,9 @@ enum BiomeType : uint8_t {
     BIOME_SAVANNA,
     BIOME_DESERT,
     BIOME_JUNGLE,
-    BIOME_VOLCANO,
-    BIOME_OCEAN
+    BIOME_ASHWORLD,   // previously BIOME_VOLCANO — reworked as ashen wasteland
+    BIOME_OCEAN,
+    BIOME_MOUNTAINS   // new — extreme elevation, snow caps, exposed stone
 };
 
 // ---------------------------------------------------------------------------
@@ -153,7 +159,8 @@ public:
     // Must be called after generateTerrain() and generateCaves().
     void generateWaterbodies(FastNoiseLite& noise, int seed, float frequency, int baseHeight, int offsetX, int offsetZ);
 
-    static BiomeType getBiomeAt(FastNoiseLite& biomeNoise, FastNoiseLite& continentalNoise, float wx, float wz);
+    static BiomeType getBiomeAt(FastNoiseLite& biomeNoise, FastNoiseLite& continentalNoise,
+                                FastNoiseLite& mountainNoise, float wx, float wz);
 
     std::vector<uint32_t> m_fluidUpdates; // Stores (x << 16) | (y << 8) | z for fluids that need initial block updates
 
