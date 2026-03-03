@@ -1,5 +1,6 @@
 #pragma once
 #include <cstddef>
+#include <mutex>
 #include <new>
 #include <utility>
 #include <algorithm>
@@ -48,12 +49,16 @@ private:
         Node* next;
     };
 
-    void* m_buffer;
-    Node* m_freeList;
+    void*  m_buffer;
+    Node*  m_freeList;
     size_t m_objectSize;
     size_t m_totalSize;
     size_t m_totalCount;
     size_t m_usedCount;
+
+    // Protects m_freeList and m_usedCount from concurrent allocate()/deallocate()
+    // calls originating from multiple background generation threads.
+    mutable std::mutex m_mutex;
 };
 
 template<typename T>

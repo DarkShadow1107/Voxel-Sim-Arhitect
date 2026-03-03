@@ -14,15 +14,16 @@ Chunk::Chunk() {
     if (m_voxels) {
         std::memset(m_voxels, 0, kVoxelCount);
     } else {
-        std::cerr << "FATAL ERROR: Chunk allocation failed! Pool exhausted." << std::endl;
-        // Safety check: if pool is exhausted, some parts of the game may crash
-        // In a real scenario, we might want to use a fallback or force a garbage collection
+        std::cerr << "WARNING: Chunk pool exhausted — using heap fallback to prevent crash." << std::endl;
+        m_voxels = new uint8_t[kVoxelCount](); // value-init to 0
+        m_heapAllocated = true;
     }
 }
 
 Chunk::~Chunk() {
     if (m_voxels) {
-        s_allocator.deallocate(m_voxels);
+        if (m_heapAllocated) delete[] m_voxels;
+        else                  s_allocator.deallocate(m_voxels);
     }
 }
 
@@ -152,6 +153,31 @@ void Chunk::generateTerrain(FastNoiseLite& noise, int seed, float frequency, int
     erosionNoise.SetFrequency(frequency * 1.8f);
     erosionNoise.SetNoiseType(FastNoiseLite::NoiseType_OpenSimplex2);
 
+    // 12. Mountain Mask — very-low-frequency noise controls WHERE mountains can appear.
+    //     At values below 0.35 (mm01) the mask is 0 (flat land); above 0.55 it is 1 (full
+    //     mountain eligible). A smoothstep blend between those thresholds prevents hard seams.
+    //     Using a lower frequency than mountainNoise means the mask changes slowly over the
+    //     world, creating continent-scale mountain ranges rather than scattered peaks.
+    FastNoiseLite mountainMaskNoise;
+    mountainMaskNoise.SetSeed(seed + 90);
+    mountainMaskNoise.SetFrequency(frequency * 0.03f);
+    mountainMaskNoise.SetNoiseType(FastNoiseLite::NoiseType_OpenSimplex2);
+    mountainMaskNoise.SetFractalType(FastNoiseLite::FractalType_FBm);
+    mountainMaskNoise.SetFractalOctaves(2);
+    mountainMaskNoise.SetFractalLacunarity(2.0f);
+    mountainMaskNoise.SetFractalGain(0.5f);
+
+    // 13. Infernal noise — very-low-frequency continental overlay that forces
+    //     BIOME_ASHWORLD in large scattered patches regardless of temperature.
+    //     Separate from biomeNoise so ashworld and jungle both have their own
+    //     full biome noise range; neither displaces the other.
+    FastNoiseLite infernalNoise;
+    infernalNoise.SetSeed(seed + 95);
+    infernalNoise.SetFrequency(frequency * 0.022f);
+    infernalNoise.SetNoiseType(FastNoiseLite::NoiseType_OpenSimplex2);
+    infernalNoise.SetFractalType(FastNoiseLite::FractalType_FBm);
+    infernalNoise.SetFractalOctaves(2);
+
     std::memset(m_voxels, 0, kVoxelCount);
 
     // seaLevel scales with worldBaseHeight so ocean surface matches land elevation.
@@ -160,8 +186,9 @@ void Chunk::generateTerrain(FastNoiseLite& noise, int seed, float frequency, int
     // -----------------------------------------------------------------------
     // Biome boundary thresholds (must match getBiomeAt())
     // -----------------------------------------------------------------------
-    // bn < -0.20 → POLAR, < 0.05 → SNOWY, < 0.35 → PLAINS,
+    // bn < -0.20 → POLAR, < 0.05 → SNOWY, < 0.35 → PLAINS (Badlands),
     // < 0.50 → SAVANNA, < 0.65 → DESERT, < 0.85 → JUNGLE, else ASHWORLD
+    // Infernal override (in_val > 0.36) → ASHWORLD regardless of temperature
     // MOUNTAINS: detected via mountainNoise > 0.50 within temperate range
     static constexpr float kBiomeThr[] = { -0.20f, 0.05f, 0.35f, 0.50f, 0.65f, 0.85f };
     static constexpr float kBlendR     = 0.08f;  // blend radius at biome borders (~100 world blocks)
@@ -182,6 +209,7 @@ void Chunk::generateTerrain(FastNoiseLite& noise, int seed, float frequency, int
             const float cn  = continentalNoise.GetNoise(wx, wz); // continental
             const float bn  = biomeNoise.GetNoise(wx, wz);       // biome
             const float en  = erosionNoise.GetNoise(wx, wz);     // erosion [-1,1]
+            const float in_val = infernalNoise.GetNoise(wx, wz); // infernal patch
 
             // Normalise to [0,1]
             const float h01 = (n  + 1.0f) * 0.5f;
@@ -189,20 +217,29 @@ void Chunk::generateTerrain(FastNoiseLite& noise, int seed, float frequency, int
             const float r01 = rn;               // Ridged is already [0,1]
             const float d01 = (dn + 1.0f) * 0.5f;
 
+            // Mountain mask: smoothstep 0→1 between mask values 0.35–0.55.
+            // Multiplied into height contributions so mountain magnitude fades to zero
+            // outside mountain-eligible zones, leaving flat/hilly terrain there instead.
+            const float mmn        = mountainMaskNoise.GetNoise(wx, wz);
+            const float mm01       = (mmn + 1.0f) * 0.5f;
+            float mountainMask     = std::clamp((mm01 - 0.35f) / 0.20f, 0.0f, 1.0f);
+            mountainMask           = mountainMask * mountainMask * (3.0f - 2.0f * mountainMask);
+
             // Classify biome using the domain-warped mountain noise (mn) so the biome
             // boundary matches exactly what the height formula uses.  Calling getBiomeAt()
             // here would use unwarped mn and produce height/biome mismatches that appear
             // as sudden cliff faces or floating terrain at mountain borders.
             BiomeType biome;
-            if      (cn < -0.30f)                              biome = BIOME_OCEAN;
-            else if (mn > 0.50f && bn > -0.18f && bn < 0.82f) biome = BIOME_MOUNTAINS;
-            else if (bn < -0.20f)                              biome = BIOME_POLAR;
-            else if (bn <  0.05f)                              biome = BIOME_SNOWY;
-            else if (bn <  0.35f)                              biome = BIOME_PLAINS;
-            else if (bn <  0.50f)                              biome = BIOME_SAVANNA;
-            else if (bn <  0.65f)                              biome = BIOME_DESERT;
-            else if (bn <  0.85f)                              biome = BIOME_JUNGLE;
-            else                                               biome = BIOME_ASHWORLD;
+            if      (cn < -0.30f)                                                      biome = BIOME_OCEAN;
+            else if (mn > 0.50f && bn > -0.18f && bn < 0.82f && mountainMask > 0.25f) biome = BIOME_MOUNTAINS;
+            else if (in_val > 0.36f)                               biome = BIOME_ASHWORLD; // infernal override
+            else if (bn < -0.20f)                                  biome = BIOME_POLAR;
+            else if (bn <  0.05f)                                  biome = BIOME_SNOWY;
+            else if (bn <  0.35f)                                  biome = BIOME_PLAINS;
+            else if (bn <  0.50f)                                  biome = BIOME_SAVANNA;
+            else if (bn <  0.65f)                                  biome = BIOME_DESERT;
+            else if (bn <  0.85f)                                  biome = BIOME_JUNGLE;
+            else                                                   biome = BIOME_ASHWORLD;
             const bool isPolar     = (biome == BIOME_POLAR);
             const bool isSnowy     = (biome == BIOME_SNOWY);
             const bool isPlains    = (biome == BIOME_PLAINS);
@@ -247,56 +284,67 @@ void Chunk::generateTerrain(FastNoiseLite& noise, int seed, float frequency, int
                     fh = fh * (1.0f - aStr) + lavaBedH * aStr;
                 }
             } else if (isMountains) {
-                // ── Broad Minecraft-style mountains ─────────────────────────
-                // Goal: wide massif base that rises gradually from the border,
-                //       moderate peaks with occasional sharp arêtes,
-                //       deep alpine valleys and eroded cliff faces.
-                //
+                // ── Enhanced dramatic mountain generation ─────────────────────────────
                 // Architecture:
-                //   broadBase      — wide dome foundation; rises fast near border (sqrt ramp)
-                //   peakMass       — moderate height gradient above the dome
-                //   ridgeEdge      — arêtes only at extreme ridged-noise values (softer)
-                //   plateau        — flatten summits (table mountains)
-                //   erosionCarve   — differential weathering; creates cliff faces
-                //   valleyFloor    — carve wide U-shaped valleys between peaks
-                // ------------------------------------------------------------------
+                //   mountainMask  — world-scale gate; prevents scattered random peaks
+                //   broadBase     — wide footing for the whole range
+                //   ridgedPeak    — r01^3 PRIMARY shape: nearly flat valleys, sharp peaks
+                //   peakMass      — mStrength^1.5 dense-core extra height
+                //   ridgeEdge     — r01^2 for knife-edge arêtes and sub-ridges
+                //   cliffDetail   — high-freq erosion for rugged Dolomite-like faces
+                //   valleyFactor  — U-shaped alpine glacial valley carving
+                //   lateralNoise  — secondary noise layer for peak asymmetry
+                // ─────────────────────────────────────────────────────────────────────
                 float e01_m = (en + 1.0f) * 0.5f;
 
-                // Base elevation: all mountains start above sea level
-                float mountainBase = bh + 20.0f;
+                // Base elevation: all mountains start well above sea level
+                float mountainBase = bh + 24.0f;
 
-                // Gentle large-scale undulation across the range
-                float foundation = h01 * 20.0f;
+                // Large-scale undulation — varies the general height of the range
+                float foundation = h01 * 22.0f;
 
-                // mStrength ramps from 0 at detection threshold (mn=0.50, m01=0.75) upward
-                constexpr float kMtnThresh01 = 0.75f; // (0.50 + 1.0) * 0.5
+                // mStrength ramps from 0 at detection threshold (mn=0.50, m01=0.75)
+                constexpr float kMtnThresh01 = 0.75f;
                 float mStrength = std::max(0.0f, (m01 - kMtnThresh01) / (1.0f - kMtnThresh01));
 
-                // Broad dome base — sqrt ramp creates a wide footprint that fills in quickly
-                // near the border and flattens as you reach the core of the mountain range.
-                float broadBase = std::sqrt(mStrength) * 30.0f;
+                // Broad dome base — gives the range a natural wide footprint
+                float broadBase = std::sqrt(mStrength) * 30.0f * mountainMask;
 
-                // Moderate peak mass — sits on top of the dome for central high summits
-                float peakMass  = std::pow(mStrength, 0.65f) * 80.0f;
+                // PRIMARY shape: ridged noise CUBED — valley floors near zero, peaks soar
+                //   r01=0.50 → 0.125×120 = 15  (valley, nearly flat)
+                //   r01=0.75 → 0.422×120 = 51  (moderate ridge)
+                //   r01=0.90 → 0.729×120 = 87  (prominent peak)
+                //   r01=0.97 → 0.913×120 = 110 (dramatic Matterhorn-class spire)
+                float ridgedPeak = std::pow(r01, 3.0f) * 120.0f * mountainMask;
 
-                // Soft ridgelines — high exponent means only the sharpest ridged-noise
-                // columns get a boost, avoiding the knife-edge/skyscraper look everywhere.
-                float ridgeEdge = std::pow(r01, 2.5f) * 24.0f;
+                // SECONDARY: peak mass gives extra bulk in the dense range core
+                // mStrength^1.5 is less steep than ^2 so moderate ranges still bulk up
+                float peakMass = std::pow(mStrength, 1.5f) * 72.0f * mountainMask;
 
-                // Plateau cap: flatten tips of very high peaks (table-top summits)
-                float combinedH = mountainBase + foundation + broadBase + peakMass + ridgeEdge;
-                if (combinedH > bh + 92.0f) {
-                    float excess = combinedH - (bh + 92.0f);
-                    combinedH = (bh + 92.0f) + excess * 0.25f;  // flatten beyond 92
+                // Accent ridgelines: r01^2 retains more knife-edge coverage
+                float ridgeEdge = std::pow(r01, 2.0f) * 38.0f * mountainMask;
+
+                // Lateral asymmetry — secondary noise shifts peak flanks for realism
+                float lateralShift = (dn + 1.0f) * 0.5f;  // 0..1
+                float peakAsymm = lateralShift * mStrength * 14.0f * mountainMask;
+
+                float combinedH = mountainBase + foundation + broadBase + ridgedPeak + peakMass + ridgeEdge + peakAsymm;
+
+                // Allow very tall peaks but taper extreme outliers gently
+                if (combinedH > bh + 148.0f) {
+                    float excess = combinedH - (bh + 148.0f);
+                    combinedH = (bh + 148.0f) + excess * 0.08f; // gentle taper, huge peaks still visible
                 }
 
-                // Erosion carving — creates rough cliff faces and texture
-                float erosionCarve = e01_m * 10.0f * (1.0f - mStrength * 0.6f);
+                // Cliff-face erosion — rough texture on steep slopes, smooth on peaks
+                float erosionCarve = e01_m * 11.0f * (1.0f - mStrength * 0.55f);
+                // Extra micro-detail: small-scale roughness for realistic cliff textures
+                float detailCarve = d01 * 4.5f * (1.0f - mStrength * 0.4f);
 
-                // Wider valley carving — deeper, broader alpine valleys between peaks
-                float valleyFactor = std::max(0.0f, 0.52f - m01) * 32.0f;
+                // U-shaped glacial valley carving between ridge spines
+                float valleyFactor = std::max(0.0f, 0.55f - m01) * 38.0f * mountainMask;
 
-                fh = combinedH - erosionCarve - valleyFactor;
+                fh = combinedH - erosionCarve - detailCarve - valleyFactor;
                 fh = std::min(fh, (float)(SizeY - 4));
             } else if (isPolar) {
                 // Nearly flat, very slight undulation — almost perfectly level ice sheet
@@ -308,10 +356,13 @@ void Chunk::generateTerrain(FastNoiseLite& noise, int seed, float frequency, int
                 float lakeDip   = std::max(0.0f, -h01 + 0.22f) * 8.0f;       // frozen lake depressions
                 fh = bh + snowHill + ridgePush + d01 * 3.5f - lakeDip;
             } else if (isPlains) {
-                // Gentle rolling plains — low hills only, occasional meadow ridges
-                float hillFactor = std::max(0.0f, m01 - 0.38f) * 24.0f;  // broader spread
-                float valleyDip  = std::max(0.0f, -h01 + 0.20f) * 5.0f;  // shallow depressions
-                fh = bh + h01 * 7.0f + d01 * 2.5f + hillFactor - valleyDip;
+                // Rolling temperate plains — gentle hills, wide open meadows
+                // Low-amplitude terrain with smooth undulation and occasional rises.
+                float plainBase = h01 * 14.0f;           // gentle rolling hills up to 14 blocks
+                float gentleRidge = r01 * 4.0f;           // very mild ridgeline variation
+                float meadowDip   = std::max(0.0f, 0.35f - h01) * 5.0f; // shallow bowl depressions
+                fh = bh + 4.0f + plainBase + gentleRidge + d01 * 3.0f - meadowDip;
+                fh = std::min(fh, bh + 30.0f);
             } else if (isSavanna) {
                 // Flat plains punctuated by steep mesa formations
                 float mesaRaw  = std::max(0.0f, m01 - 0.70f) / 0.30f; // 0..1
@@ -377,8 +428,9 @@ void Chunk::generateTerrain(FastNoiseLite& noise, int seed, float frequency, int
             // ------------------------------------------------------------------
             // River carving — blend height toward river bed
             // (Ashworld uses its own lava channel system; excluded here)
+            // Badlands: dry biome — no rivers
             // ------------------------------------------------------------------
-            if (!isDesert && !isPolar && !isOcean && !isAshworld) {
+            if (!isDesert && !isPolar && !isOcean && !isAshworld && !isPlains) {
                 const float rv   = std::abs(riverNoise.GetNoise(wx, wz));
                 const float rW   = 0.075f;  // wider channels than 0.060
                 const float rStr = std::clamp((rW - rv) / rW, 0.0f, 1.0f);
@@ -427,6 +479,9 @@ void Chunk::generateTerrain(FastNoiseLite& noise, int seed, float frequency, int
                         else                                        type = BLOCK_SAND;
                     } else if (isDesert) {
                         type = BLOCK_SAND;
+                    } else if (isPlains) {
+                        // Rolling plains: grass surface, sandy near water
+                        type = (y <= seaLevel + 1) ? BLOCK_SAND : BLOCK_GRASS;
                     } else if (isSavanna) {
                         // Mesa top: stone/sandstone strata; low ground: grass/sand
                         float mesaRaw = std::max(0.0f, m01 - 0.70f) / 0.30f;
@@ -438,13 +493,21 @@ void Chunk::generateTerrain(FastNoiseLite& noise, int seed, float frequency, int
                         // Dark ashen surface: basalt outcrops or ash coating
                         type = (m01 > 0.78f) ? BLOCK_BASALT : BLOCK_ASH;
                     } else if (isMountains) {
-                        // Thresholds relative to baseHeight so snow/stone bands
-                        // scale correctly across different worldBaseHeight settings.
-                        if      (h > bh + 85)  type = BLOCK_SNOW;
-                        else if (h > bh + 72)  type = BLOCK_STONE;   // exposed rock face
-                        else if (h > bh + 58)  type = BLOCK_GRAVEL;  // scree slopes
-                        else if (h > bh + 45)  type = BLOCK_GRASS;   // alpine meadow
-                        else                   type = BLOCK_DIRT;     // lower foothills
+                        // Enhanced altitude-banded surface blocks for dramatic alpine look:
+                        // bh+120: permanent deep snowfield (near summit)
+                        // bh+95:  wind-scoured bare stone
+                        // bh+78:  gravel/scree (freeze-thaw fractured rock)
+                        // bh+62:  mossy stone (sheltered cliff ledges)
+                        // bh+46:  alpine grass meadow (tree-line)
+                        // bh+32:  earthy foothills
+                        // below:  dirt/grass valley floor
+                        if      (h > bh + 120) type = BLOCK_SNOW;
+                        else if (h > bh + 95)  type = BLOCK_STONE;
+                        else if (h > bh + 78)  type = BLOCK_GRAVEL;
+                        else if (h > bh + 62)  type = BLOCK_MOSSY_STONE;
+                        else if (h > bh + 46)  type = BLOCK_GRASS;
+                        else if (h > bh + 32)  type = BLOCK_DIRT;
+                        else                   type = BLOCK_GRASS;
                     } else {
                         // Default temperate (fallback biome)
                         if      (h > bh + 78)        type = BLOCK_SNOW;
@@ -455,6 +518,9 @@ void Chunk::generateTerrain(FastNoiseLite& noise, int seed, float frequency, int
                     // Sub-surface layer
                     if (isDesert || isOcean) {
                         type = BLOCK_SAND;
+                    } else if (isPlains) {
+                        // Plains sub-surface: dirt
+                        type = BLOCK_DIRT;
                     } else if (isPolar) {
                         type = BLOCK_STONE;
                     } else if (isSavanna) {
@@ -463,8 +529,20 @@ void Chunk::generateTerrain(FastNoiseLite& noise, int seed, float frequency, int
                     } else if (isAshworld) {
                         type = BLOCK_BASALT;
                     } else if (isMountains) {
-                        // Cliff strata: alternating STONE/GRAVEL bands every 8 blocks
-                        type = ((y / 8) % 2 == 0) ? BLOCK_STONE : BLOCK_GRAVEL;
+                        // Rich cliff strata: STONE / GRAVEL / MOSSY_STONE / COBBLESTONE
+                        // cycling every 5 blocks. Upper elevations: bare stone & gravel.
+                        // Lower: mossy rock & cobblestone (sheltered wet ledges).
+                        int stratum = (y / 5) % 4;
+                        if (h > bh + 80) {
+                            type = (stratum <= 1) ? BLOCK_STONE : BLOCK_GRAVEL;
+                        } else if (h > bh + 50) {
+                            type = (stratum == 0) ? BLOCK_STONE
+                                 : (stratum == 1) ? BLOCK_GRAVEL
+                                 : (stratum == 2) ? BLOCK_MOSSY_STONE : BLOCK_COBBLESTONE;
+                        } else {
+                            type = (stratum == 0) ? BLOCK_MOSSY_STONE
+                                 : (stratum == 1) ? BLOCK_COBBLESTONE : BLOCK_STONE;
+                        }
                     } else {
                         type = BLOCK_DIRT;
                     }
@@ -520,7 +598,15 @@ void Chunk::generateTerrain(FastNoiseLite& noise, int seed, float frequency, int
             // Flora & structures
             // ------------------------------------------------------------------
             if (h > seaLevel && h < SizeY - 24) {
-                int r   = rand() % 2000;
+                // Deterministic per-column hash — replaces rand() so tree/flora
+                // positions are stable across sessions and chunk re-generations.
+                // Combines world-space X, Z and seed to produce a unique value
+                // for every column without any global state.
+                uint32_t ch = (uint32_t)((int)wx * 1664525 + (int)wz * 1013904223 + seed * 22695477);
+                ch ^= ch >> 16;
+                ch *= 0x45d9f3bu;
+                ch ^= ch >> 16;
+                int r = (int)(ch % 2000);
                 float treeN = noise.GetNoise(wx * 0.08f, wz * 0.08f);
 
                 // Forest zone gating: use treeN to create natural clearings and
@@ -537,13 +623,28 @@ void Chunk::generateTerrain(FastNoiseLite& noise, int seed, float frequency, int
                     }
 
                 } else if (isMountains) {
-                    // Mountains: pine trees in foothills only; snow layers on higher slopes
+                    // Mountains: dense pine forests in foothills, alpine meadows, snow above
                     if (h + 1 < SizeY) {
-                        if      (h < bh + 50 && r < 10 && inForestZone)
+                        if (h < bh + 32 && r < 18 && inForestZone)
+                            // Valley forest: regular or pine trees
                             StructureGenerator::generatePineTree(this, x, h + 1, z);
-                        else if (h >= bh + 50 && h < bh + 70 && r < 250)
+                        else if (h >= bh + 32 && h < bh + 46 && r < 22 && inForestZone)
+                            // Foothill pine forest — denser
+                            StructureGenerator::generatePineTree(this, x, h + 1, z);
+                        else if (h >= bh + 46 && h < bh + 62 && r < 18 && inDenseZone)
+                            // Alpine pine treeline — sparse
+                            StructureGenerator::generatePineTree(this, x, h + 1, z);
+                        // Alpine meadow flowers in grass/moss band
+                        else if (h >= bh + 46 && h < bh + 64 && r < 100 && inFlowerZone)
+                            set(x, h + 1, z, (ch % 3 == 0) ? BLOCK_FLOWER_BLUE : BLOCK_FLOWER_RED);
+                        // Sparse tall grass in valley floors
+                        else if (h < bh + 32 && r < 280)
+                            set(x, h + 1, z, BLOCK_TALL_GRASS);
+                        // Upper scree: patchy snow (transition zone)
+                        else if (h >= bh + 78 && h < bh + 95 && r < 500)
                             set(x, h + 1, z, BLOCK_SNOW_LAYER);
-                        else if (h >= bh + 70 && r < 900)
+                        // Snowfield: near-total coverage above ~95 blocks
+                        else if (h >= bh + 95 && r < 1600)
                             set(x, h + 1, z, BLOCK_SNOW_LAYER);
                     }
 
@@ -583,17 +684,17 @@ void Chunk::generateTerrain(FastNoiseLite& noise, int seed, float frequency, int
                         set(x, h + 1, z, BLOCK_SNOW_LAYER);
 
                 } else if (isPlains) {
-                    // Plains: wide open meadow; trees only in defined forest zones
-                    if (r < 10 && inForestZone && treeN > 0.25f) {
-                        if      (treeN > 0.55f)  StructureGenerator::generateTree(this, x, h + 1, z, BLOCK_CHERRY_WOOD, BLOCK_CHERRY_LEAVES);
-                        else if (treeN < 0.30f)  StructureGenerator::generateTree(this, x, h + 1, z, BLOCK_BIRCH_WOOD,  BLOCK_BIRCH_LEAVES);
-                        else                      StructureGenerator::generateTree(this, x, h + 1, z, BLOCK_WOOD,        BLOCK_LEAVES);
-                    } else if (r == 102) {
-                        StructureGenerator::generateVillage(this, x, h + 1, z);
-                    } else if (r < 40 && inFlowerZone) {
-                        set(x, h + 1, z, treeN > 0.42f ? BLOCK_FLOWER_RED : BLOCK_FLOWER_BLUE);
-                    } else if (r < 600) {
-                        // Dense grass carpet — the defining look of plains
+                    // Rolling plains: grasslands with trees, flowers, villages
+                    int treeCut = inDenseZone ? 22 : (inForestZone ? 9 : 0);
+                    if (treeCut > 0 && r < treeCut) {
+                        // Mix of oak and birch trees across the plains
+                        if      (treeN > 0.30f)  StructureGenerator::generateTree(this, x, h + 1, z, BLOCK_BIRCH_WOOD, BLOCK_BIRCH_LEAVES);
+                        else                      StructureGenerator::generateTree(this, x, h + 1, z, BLOCK_WOOD, BLOCK_LEAVES);
+                    } else if (r == 88) {
+                        StructureGenerator::generateSmallHouse(this, x, h + 1, z);
+                    } else if (r < 55 && inFlowerZone) {
+                        set(x, h + 1, z, (ch % 2 == 0) ? BLOCK_FLOWER_RED : BLOCK_FLOWER_BLUE);
+                    } else if (r < 300) {
                         set(x, h + 1, z, BLOCK_TALL_GRASS);
                     }
 
@@ -753,6 +854,13 @@ void Chunk::generateWaterbodies(FastNoiseLite& noise, int seed, float frequency,
     oasisNoise.SetFrequency(frequency * 1.5f);
     oasisNoise.SetNoiseType(FastNoiseLite::NoiseType_OpenSimplex2);
 
+    FastNoiseLite infernalNoise;
+    infernalNoise.SetSeed(seed + 95);
+    infernalNoise.SetFrequency(frequency * 0.022f);
+    infernalNoise.SetNoiseType(FastNoiseLite::NoiseType_OpenSimplex2);
+    infernalNoise.SetFractalType(FastNoiseLite::FractalType_FBm);
+    infernalNoise.SetFractalOctaves(2);
+
     // Pre-compute surface height (topmost TERRAIN block) per column.
     // Vegetation, decorations, and player-built structures are excluded so
     // waterfalls are never anchored to tree canopies or flower tops.
@@ -790,18 +898,20 @@ void Chunk::generateWaterbodies(FastNoiseLite& noise, int seed, float frequency,
             float wz = (float)(z + offsetZ);
 
             BiomeType biome = getBiomeAt(biomeNoise, continentalNoise, mountainNoise, wx, wz);
+            if (infernalNoise.GetNoise(wx, wz) > 0.36f && biome != BIOME_OCEAN) biome = BIOME_ASHWORLD;
             const bool isDesert    = (biome == BIOME_DESERT);
             const bool isPolar     = (biome == BIOME_POLAR);
             const bool isOcean     = (biome == BIOME_OCEAN);
             const bool isAshworld  = (biome == BIOME_ASHWORLD);
             const bool isMountains = (biome == BIOME_MOUNTAINS);
+            const bool isPlains    = (biome == BIOME_PLAINS);
 
             const int h = heights[x][z];
 
             // ------------------------------------------------------------------
             // 1. River water — fill channel from carved bed up to seaLevel
             // ------------------------------------------------------------------
-            if (!isDesert && !isPolar && !isOcean && !isAshworld) {
+            if (!isDesert && !isPolar && !isOcean && !isAshworld && !isPlains) {
                 const float rv   = std::abs(riverNoise.GetNoise(wx, wz));
                 const float rW   = 0.075f;  // wider channels than 0.060
                 const float rStr = std::clamp((rW - rv) / rW, 0.0f, 1.0f);
@@ -827,26 +937,31 @@ void Chunk::generateWaterbodies(FastNoiseLite& noise, int seed, float frequency,
             }
 
             // ------------------------------------------------------------------
-            // 2. Highland lake — fill enclosed depressions above seaLevel
-            //    A column is a candidate if it is lower than ALL 4 neighbours.
+            // 2. Highland lake — fill enclosed depressions above seaLevel.
+            //    A column qualifies if AT LEAST 3 of 4 immediate neighbours are
+            //    higher than it (relaxed from "all 4 must be higher" to allow
+            //    natural shallow bowls and curved shorelines).
             //    Mountains: extended lake range up to h<80
             // ------------------------------------------------------------------
             {
                 int lakeCap = isMountains ? 80 : 60;
                 if (!isDesert && !isPolar && !isOcean && !isAshworld &&
                     h > seaLevel + 2 && h < lakeCap) {
-                    bool isDepression = true;
+                    int higherCount = 0;
                     int  minNeighbor  = SizeY;
+                    bool edgeChunk = false;
                     for (int d = 0; d < 4; ++d) {
                         int nx2 = x + ddx[d], nz2 = z + ddz[d];
                         if (nx2 < 0 || nx2 >= SizeX || nz2 < 0 || nz2 >= SizeZ) {
-                            isDepression = false; break;
+                            edgeChunk = true; break;
                         }
                         int nh = heights[nx2][nz2];
-                        if (nh <= h) { isDepression = false; break; }
+                        if (nh > h) higherCount++;
                         if (nh < minNeighbor) minNeighbor = nh;
                     }
-                    if (isDepression) {
+                    // Require at least 3 of 4 neighbours to be higher (allows
+                    // natural curved shorelines instead of only isolated pixels).
+                    if (!edgeChunk && higherCount >= 3) {
                         int lakeTop = std::min(minNeighbor - 1, h + 3);
                         for (int wy = h + 1; wy <= lakeTop && wy < SizeY; ++wy)
                             if (get(x, wy, z) == BLOCK_AIR)
@@ -857,11 +972,14 @@ void Chunk::generateWaterbodies(FastNoiseLite& noise, int seed, float frequency,
 
             // ------------------------------------------------------------------
             // 3. Waterfall — source block on cliff top + pre-filled falling column
-            //    Mountains: lower drop threshold (>=3) to produce more waterfalls
+            //    Mountains: lower drop threshold (>=2) for dramatic mountain cascades.
+            //    Others: threshold 3 (was 4) — more scenic waterfalls across all biomes.
+            //    Minimum height above sea level lowered to 6 (was 10) to allow lower
+            //    elevation cliff-face waterfalls.
             // ------------------------------------------------------------------
             {
-                int wfMinDrop = isMountains ? 3 : 5;
-                if (!isDesert && !isPolar && !isOcean && !isAshworld && h > seaLevel + 10) {
+                int wfMinDrop = isMountains ? 2 : 3;
+                if (!isDesert && !isPolar && !isOcean && !isAshworld && h > seaLevel + 6) {
                     int maxDrop = 0, dropDX = 0, dropDZ = 0;
                     for (int d = 0; d < 4; ++d) {
                         int nx2 = x + ddx[d], nz2 = z + ddz[d];
@@ -872,7 +990,7 @@ void Chunk::generateWaterbodies(FastNoiseLite& noise, int seed, float frequency,
 
                     if (maxDrop >= wfMinDrop) {
                         float wfN = noise.GetNoise(wx * 4.0f, wz * 4.0f);
-                        if (wfN > 0.35f) {
+                        if (wfN > 0.28f) {  // lowered from 0.35 — more scenic waterfalls
                             // Source block — only place on empty air (never overwrite a tree trunk)
                             if (h + 1 < SizeY && get(x, h + 1, z) == BLOCK_AIR)
                                 set(x, h + 1, z, BLOCK_WATER);
@@ -881,7 +999,7 @@ void Chunk::generateWaterbodies(FastNoiseLite& noise, int seed, float frequency,
                             const int cliffX  = x + dropDX;
                             const int cliffZ  = z + dropDZ;
                             const int colTop  = h;
-                            const int colLen  = std::min(maxDrop - 1, 10);
+                            const int colLen  = std::min(maxDrop - 1, 16);  // was 10, allow longer falls
                             const int colBot  = colTop - colLen + 1;
                             for (int fy = colTop; fy >= colBot; --fy) {
                                 if (fy >= 1 && fy < SizeY &&
@@ -925,9 +1043,14 @@ void Chunk::generateWaterbodies(FastNoiseLite& noise, int seed, float frequency,
     // -----------------------------------------------------------------------
     BiomeType colBiome[SizeX][SizeZ];
     for (int z2 = 0; z2 < SizeZ; ++z2)
-        for (int x2 = 0; x2 < SizeX; ++x2)
-            colBiome[x2][z2] = getBiomeAt(biomeNoise, continentalNoise, mountainNoise,
-                                           (float)(x2 + offsetX), (float)(z2 + offsetZ));
+        for (int x2 = 0; x2 < SizeX; ++x2) {
+            BiomeType cb = getBiomeAt(biomeNoise, continentalNoise, mountainNoise,
+                                      (float)(x2 + offsetX), (float)(z2 + offsetZ));
+            if (infernalNoise.GetNoise((float)(x2 + offsetX), (float)(z2 + offsetZ)) > 0.36f
+                && cb != BIOME_OCEAN)
+                cb = BIOME_ASHWORLD;
+            colBiome[x2][z2] = cb;
+        }
 
     // -----------------------------------------------------------------------
     // Schedule fluid updates: only the TOPMOST fluid block per column.

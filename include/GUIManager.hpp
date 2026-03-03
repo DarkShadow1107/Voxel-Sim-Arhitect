@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
 #include "BlockDesigner.hpp"
 #include "MobDesigner.hpp"
 #include "ToolDesigner.hpp"
@@ -73,8 +74,36 @@ public:
     void showHelperWindow()                 { m_helperWindow.show(); }
     void openHelperWindow()                 { m_helperWindow.open(); }
 
-    WeatherDesigner& getWeatherDesigner()   { return m_weatherDesigner; }
+    // Supply live world stats once per frame (call before showMainMenuBar).
+    // These values are displayed in the right-side status bar of the menu bar.
+    //   px/py/pz  — player world position
+    //   biome     — display name of the biome at player position (may be nullptr)
+    //   chunks    — number of currently loaded chunks
+    //   day       — world time in ticks (used to show day/night badge)
+    void setWorldStats(float px, float py, float pz,
+                       const char* biome, int chunks, float worldTime = 0.0f) {
+        m_playerX      = px;
+        m_playerY      = py;
+        m_playerZ      = pz;
+        m_biomeName    = biome ? biome : "";
+        m_loadedChunks = chunks;
+        m_worldTime    = worldTime;
+    }
+    // Supply per-frame gameplay stats for the navbar status bar.
+    //   isCreative — true if in Creative mode
+    //   level      — player XP level
+    //   hp         — current player health (0-20)
+    //   oxygen     — breath meter (0-20; used to show drowning state)
+    void setPlayerStats(bool isCreative, uint32_t level, float hp, float oxygen = 20.0f) {
+        m_isCreativeMode = isCreative;
+        m_playerLevel    = level;
+        m_playerHp       = hp;
+        m_playerOxygen   = oxygen;
+    }
+    // Supply the current world name so the navbar can display it.
+    void setWorldName(const char* name) { m_worldName = name ? name : ""; }
     WorldEditor& getWorldEditor()           { return m_worldEditor; }
+    WeatherDesigner& getWeatherDesigner()   { return m_weatherDesigner; }
 
     // MobDesigner / ToolDesigner <-> BlockDesigner coordination
     void coordinateMobBlockEdit(bool& showBlockDesigner);
@@ -95,6 +124,18 @@ private:
     class Shader* m_previewShader = nullptr;
     bool m_initialized = false;
     bool m_vsync = false;
+
+    // Live world stats (updated via setWorldStats once per frame)
+    float       m_playerX = 0.0f, m_playerY = 0.0f, m_playerZ = 0.0f;
+    std::string m_biomeName;
+    std::string m_worldName;       // current world save name shown in navbar
+    int         m_loadedChunks = 0;
+    float       m_worldTime    = 0.0f;
+    // Live gameplay stats (updated via setPlayerStats once per frame)
+    bool        m_isCreativeMode = true;
+    uint32_t    m_playerLevel    = 0;
+    float       m_playerHp       = 20.0f;
+    float       m_playerOxygen   = 20.0f;
 
     // Modular UI panels
     BlockDesigner  m_blockDesigner;

@@ -45,6 +45,7 @@
 #include <cstring>
 #include <csignal>
 #include <ctime>
+#include <random>
 #ifdef _WIN32
 #  include <windows.h>
 #endif
@@ -236,6 +237,13 @@ int main() {
     mountainNoise.SetNoiseType(FastNoiseLite::NoiseType_OpenSimplex2);
     mountainNoise.SetFractalType(FastNoiseLite::FractalType_FBm);
     mountainNoise.SetFractalOctaves(4);
+
+    FastNoiseLite infernalNoise;
+    infernalNoise.SetSeed(1337 + 95);
+    infernalNoise.SetFrequency(0.02f * 0.022f); // Matches Chunk.cpp: frequency * 0.022f
+    infernalNoise.SetNoiseType(FastNoiseLite::NoiseType_OpenSimplex2);
+    infernalNoise.SetFractalType(FastNoiseLite::FractalType_FBm);
+    infernalNoise.SetFractalOctaves(2);
     
     // 3. Multi-threaded Task Scheduler
     TaskScheduler scheduler(std::thread::hardware_concurrency());
@@ -289,6 +297,28 @@ int main() {
     float playerInvincTimer = 0.0f; // Invincibility frames after a hit
     float toolSwingT = 0.0f;        // 0=resting, 1=full swing (drives hand animation)
 
+    // ── Game Mode ─────────────────────────────────────────────────────────────
+    bool isCreativeMode = true;      // true=Creative (fly, no damage, no hunger)
+                                     // false=Survival (gravity, damage, hunger)
+    // ── Hunger (Survival only) ────────────────────────────────────────────────
+    float playerHunger      = 20.0f; // 0-20 food level (20 = full)
+    float playerSaturation  = 5.0f;  // 0-20 saturation buffer (drains before hunger)
+    float playerExhaustion  = 0.0f;  // 0-4 exhaustion (overflows → drains saturation/hunger)
+    float hungerRegenTimer  = 0.0f;  // counts up to regen 1 HP when hunger >= 18
+    float hungerStarveTimer = 0.0f;  // counts up to drain 1 HP when hunger == 0
+    // ── Fall damage (Survival only) ───────────────────────────────────────────
+    float fallDistance      = 0.0f;  // accumulated fall depth this air-time
+    // ── Oxygen / Drowning (Survival only) ─────────────────────────────────────
+    float playerOxygen      = 20.0f; // 0-20 breath (bubbles); drains when fully submerged
+    float oxygenDrainTimer  = 0.0f;  // counts up to 1s; drains 1 bubble when full
+    float drownDmgTimer     = 0.0f;  // counts up to 1s; deals 2 HP when oxygen == 0
+    // ── Player Level / XP ─────────────────────────────────────────────────────
+    uint32_t playerLevel    = 1;     // display level (shown in navbar)
+    float    playerXP       = 0.0f;  // accumulated XP toward next level
+    // ── Lifetime stats ────────────────────────────────────────────────────────
+    uint32_t statBlocksPlaced = 0;   // total blocks placed this session / loaded from save
+    uint32_t statBlocksMined  = 0;   // total blocks mined this session
+
     // World save/load state
     char worldSaveName[64] = "My World";
     bool showWorldList = false;
@@ -316,6 +346,22 @@ int main() {
     bool backfaceCulling = false;
     bool fullscreen = true;
     bool menuMode = true; // Start in menu mode
+
+    // ── Start Menu state ─────────────────────────────────────────────────────
+    bool inMainMenu = true;          // Show Minecraft-style title screen
+    bool worldInitialized = false;   // Prevent world gen before user picks a world
+    bool showNewWorldDialog = false;  // Sub-dialog "Create New World"
+    bool showLoadWorldDialog = false; // Sub-dialog "Load World"
+    char newWorldName[64]     = "My World";
+    char newWorldSeedStr[32]  = "1337";
+    int  newWorldGameMode     = 0;   // 0 = Creative, 1 = Survival
+    int  startMenuSelectedSave = -1;
+    std::vector<WorldSaveInfo> startMenuSaves;
+    std::string pendingLoadFile; // deferred load: set by dialogs, executed at frame start
+
+    // ── Exit-confirmation state ───────────────────────────────────────────────
+    bool showExitConfirm  = false;   // Exit-confirmation modal open
+    char exitWorldName[64] = "My World"; // Pre-filled save name in exit dialog
 
     loadUIConfig(showProfiler, showMemory, showECS, showWorldEditor, showSettings, showSoundEditor, showBlockDesigner, showMobDesigner, showInteractionEditor, showToolDesigner, showSoundDesigner, showAdvWorldEditor, fullscreen);
 
@@ -504,6 +550,45 @@ int main() {
         precomputedStars.push_back(sd);
     }
 
+    // ── Session restore: read last world file from session.cfg ───────────────
+    std::string lastSessionFile;
+    {
+        std::ifstream scf("session.cfg");
+        if (scf.is_open()) {
+            std::getline(scf, lastSessionFile);
+            // Trim whitespace
+            while (!lastSessionFile.empty() && (lastSessionFile.back() == '\n' || lastSessionFile.back() == '\r' || lastSessionFile.back() == ' '))
+                lastSessionFile.pop_back();
+            // Validate the file actually exists
+            if (!lastSessionFile.empty() && !std::filesystem::exists(lastSessionFile))
+                lastSessionFile.clear();
+        }
+    }
+
+    // ── Helper: return the first non-existing save name, incrementing — "My World" → "My World 2" → "My World 3"...
+    auto uniqueWorldName = [](const char* baseName) -> std::string {
+        // Sanitize (same rules as the save button)
+        std::string safe;
+        for (const char* p = baseName; *p; ++p) {
+            char c = *p;
+            if ((c>='a'&&c<='z')||(c>='A'&&c<='Z')||(c>='0'&&c<='9')||c=='_'||c=='-'||c==' ')
+                safe += c;
+        }
+        if (safe.empty()) safe = "My World";
+
+        // If no collision, return as-is
+        if (!std::filesystem::exists("saves/" + safe + ".vsa"))
+            return safe;
+
+        // Try "basename 2", "basename 3", ...
+        for (int n = 2; n < 10000; ++n) {
+            std::string candidate = safe + " " + std::to_string(n);
+            if (!std::filesystem::exists("saves/" + candidate + ".vsa"))
+                return candidate;
+        }
+        return safe; // fallback (should never reach)
+    };
+
     while (!renderer.shouldClose()) {
         const auto currentTime = std::chrono::high_resolution_clock::now();
         const float deltaMs = (float)std::chrono::duration<double, std::milli>(currentTime - lastTime).count();
@@ -522,9 +607,7 @@ int main() {
         }
 
         // Global Input Handling
-        if (glfwGetKey(renderer.getWindow(), GLFW_KEY_ESCAPE) == GLFW_PRESS) {
-            glfwSetWindowShouldClose(renderer.getWindow(), true);
-        }
+        // (ESC is handled lower down near the in-game pause menu, guarded by !inMainMenu)
 
         // Chat Toggle
         static bool tPressed = false;
@@ -546,7 +629,48 @@ int main() {
             f10Pressed = false;
         }
 
-        // World Update (Auto-generation)
+        // ── Deferred world load (popup dialogs set pendingLoadFile to avoid mid-frame clear) ──
+        if (!pendingLoadFile.empty()) {
+            std::string fileToLoad = pendingLoadFile;
+            pendingLoadFile.clear();
+            WorldMetadata lm;
+            if (world.load(fileToLoad, lm)) {
+                fluidSim.clear();
+                std::strncpy(worldSaveName, lm.name, sizeof(worldSaveName)-1);
+                worldSaveName[sizeof(worldSaveName)-1] = '\0';
+                std::strncpy(exitWorldName, lm.name, sizeof(exitWorldName)-1);
+                exitWorldName[sizeof(exitWorldName)-1] = '\0';
+                worldSeed = lm.seed; worldFrequency = lm.frequency;
+                worldBaseHeight = lm.baseHeight; worldTime = lm.worldTime;
+                loadedWorldFile = fileToLoad;
+                noise.SetSeed(worldSeed);
+                biomeNoise.SetSeed(worldSeed+20); biomeNoise.SetFrequency(worldFrequency*0.04f);
+                continentalNoise.SetSeed(worldSeed+10); continentalNoise.SetFrequency(worldFrequency*0.07f);
+                mountainNoise.SetSeed(worldSeed+1); mountainNoise.SetFrequency(worldFrequency*0.55f);
+                infernalNoise.SetSeed(worldSeed+95); infernalNoise.SetFrequency(worldFrequency*0.022f);
+                camera.setPosition({0.0f,(float)(worldBaseHeight+20),0.0f});
+                spawnPosition = camera.position();
+                if (lm.version >= 2 && (lm.playerX!=0.f||lm.playerY!=0.f||lm.playerZ!=0.f))
+                    camera.setPosition({lm.playerX, lm.playerY, lm.playerZ});
+                // v3: restore orientation, game mode, player level
+                if (lm.version >= 3) {
+                    if (lm.playerYaw != 0.0f || lm.playerPitch != 0.0f)
+                        camera.setYawPitch(lm.playerYaw, lm.playerPitch);
+                    isCreativeMode   = (lm.gameMode == 0);
+                    playerLevel      = lm.playerLevel;
+                    statBlocksPlaced = lm.blocksPlaced;
+                } else {
+                    isCreativeMode = true; // legacy saves default to Creative
+                }
+                playerHunger=20.f; playerSaturation=5.f; playerExhaustion=0.f;
+                playerHp=20.f; fallDistance=0.f; playerOxygen=20.f;
+                worldInitialized=true; inMainMenu=false; menuMode=false;
+                { std::ofstream scf("session.cfg"); scf << fileToLoad << "\n"; }
+            }
+        }
+
+        // World Update (Auto-generation) — skip while start menu is visible
+        if (!inMainMenu && worldInitialized) {
         world.setRenderDistance(renderDistance);
         world.update(camera.position(), noise, worldSeed, worldFrequency, worldBaseHeight, &scheduler);
 
@@ -618,6 +742,8 @@ int main() {
             }
         }
 
+        } // end if (!inMainMenu && worldInitialized)
+
         renderer.clear();
 
         // Update camera aspect
@@ -635,7 +761,41 @@ int main() {
 
         // Editor-style dockspace (production-feel).
         ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport());
-        
+
+        // ── Supply live world stats to GUIManager for navbar display ─────────
+        // Biome is sampled at 5 Hz (every 0.2 s) to avoid per-frame noise calls.
+        {
+            static const char* s_navBiomeName = "";
+            static float       s_navBiomeTimer = 0.0f;
+            static BiomeType   s_navBiome = BIOME_PLAINS;
+            s_navBiomeTimer += dt;
+            if (s_navBiomeTimer >= 0.2f) {
+                s_navBiomeTimer = 0.0f;
+                float bn  = biomeNoise.GetNoise(camera.position().x, camera.position().z);
+                float mn  = mountainNoise.GetNoise(camera.position().x, camera.position().z);
+                float cn  = continentalNoise.GetNoise(camera.position().x, camera.position().z);
+                float in_ = infernalNoise.GetNoise(camera.position().x, camera.position().z);
+                if      (cn < -0.30f)                                         s_navBiome = BIOME_OCEAN;
+                else if (mn > 0.42f && bn > -0.18f && bn < 0.82f)            s_navBiome = BIOME_MOUNTAINS;
+                else if (in_ > 0.36f)                                         s_navBiome = BIOME_ASHWORLD;
+                else if (bn < -0.20f)                                         s_navBiome = BIOME_POLAR;
+                else if (bn <  0.05f)                                         s_navBiome = BIOME_SNOWY;
+                else if (bn <  0.35f)                                         s_navBiome = BIOME_PLAINS;
+                else if (bn <  0.50f)                                         s_navBiome = BIOME_SAVANNA;
+                else if (bn <  0.65f)                                         s_navBiome = BIOME_DESERT;
+                else if (bn <  0.85f)                                         s_navBiome = BIOME_JUNGLE;
+                else                                                          s_navBiome = BIOME_ASHWORLD;
+                s_navBiomeName = BiomeRegistry::get(s_navBiome).name;
+            }
+            const Vec3 cPos = camera.position();
+            gui.setWorldStats(cPos.x, cPos.y, cPos.z,
+                              s_navBiomeName,
+                              (int)world.getChunkCount(),
+                              worldTime);
+            gui.setPlayerStats(isCreativeMode, playerLevel, playerHp, playerOxygen);
+            gui.setWorldName(worldSaveName);
+        }
+
         gui.showMainMenuBar(showProfiler, showMemory, showECS, showWorldEditor, showSettings, showSoundEditor, showBlockDesigner, showMobDesigner, showInteractionEditor, showToolDesigner, showWeatherDesigner, showSoundDesigner, showAdvWorldEditor, showTextureDesigner);
         gui.showWindowTabBar(showProfiler, showMemory, showECS, showWorldEditor, showSettings, showSoundEditor, showBlockDesigner, showMobDesigner, showInteractionEditor, showToolDesigner, showWeatherDesigner, showSoundDesigner, showAdvWorldEditor, showTextureDesigner);
 
@@ -672,6 +832,268 @@ int main() {
                 ImVec2 screenPos = ImGui::GetCursorScreenPos();
                 ImGui::Image((ImTextureID)(uintptr_t)viewportBuffer.getTexture(), viewportSize, ImVec2(0, 1), ImVec2(1, 0));
 
+                // ────────────────────────────────────────────────────────────
+                // REDESIGNED MAIN MENU — clean game-launcher style
+                // ────────────────────────────────────────────────────────────
+                if (inMainMenu) {
+                    ImDrawList* dl = ImGui::GetWindowDrawList();
+                    const float vw = viewportSize.x;
+                    const float vh = viewportSize.y;
+                    const float t  = (float)ImGui::GetTime();
+                    const ImVec2 vpEnd(screenPos.x + vw, screenPos.y + vh);
+
+                    // ── Background ───────────────────────────────────────────
+                    // Deep near-black base
+                    dl->AddRectFilled(screenPos, vpEnd, IM_COL32(6, 8, 14, 255));
+                    // Radial glow from top-centre (brand blue)
+                    dl->AddRectFilledMultiColor(
+                        screenPos, ImVec2(screenPos.x + vw, screenPos.y + vh * 0.55f),
+                        IM_COL32(14, 28, 58, 200), IM_COL32(14, 28, 58, 200),
+                        IM_COL32(6, 8, 14, 0),     IM_COL32(6, 8, 14, 0));
+                    // Subtle grid pattern (evenly spaced lines at low opacity)
+                    {
+                        const float step = 40.0f;
+                        const ImU32 gridCol = IM_COL32(30, 45, 80, 28);
+                        for (float x = screenPos.x + fmodf(t * 2.0f, step); x < vpEnd.x; x += step)
+                            dl->AddLine(ImVec2(x, screenPos.y), ImVec2(x, vpEnd.y), gridCol, 1.0f);
+                        for (float y = screenPos.y + fmodf(t * 1.0f, step); y < vpEnd.y; y += step)
+                            dl->AddLine(ImVec2(screenPos.x, y), ImVec2(vpEnd.x, y), gridCol, 1.0f);
+                    }
+                    // Bottom vignette
+                    dl->AddRectFilledMultiColor(
+                        ImVec2(screenPos.x, screenPos.y + vh * 0.70f), vpEnd,
+                        IM_COL32(0,0,0,0), IM_COL32(0,0,0,0),
+                        IM_COL32(0,0,0,170), IM_COL32(0,0,0,170));
+
+                    // ── Title ────────────────────────────────────────────────
+                    const char* kTitle    = "Voxel-Sim Architect";
+                    const char* kVersion  = "Beta  v0.6";
+                    float tScale = std::min(vw / 900.0f, 1.55f);
+                    float titleFontSz = ImGui::GetFontSize() * tScale * 2.2f;
+                    // Use CalcTextSize with scaling factor approximation
+                    ImGui::SetWindowFontScale(tScale * 2.2f);
+                    ImVec2 titSz = ImGui::CalcTextSize(kTitle);
+                    ImGui::SetWindowFontScale(1.0f);
+                    float titleY = screenPos.y + vh * 0.10f;
+                    ImVec2 titPos(screenPos.x + (vw - titSz.x) * 0.5f, titleY);
+                    // Glow (three blurred shadows at increasing distances)
+                    for (int g = 3; g >= 1; --g) {
+                        float off = (float)g * 3.0f;
+                        uint8_t ga = (uint8_t)(25 * g);
+                        ImGui::SetWindowFontScale(tScale * 2.2f);
+                        dl->AddText(nullptr, titleFontSz, ImVec2(titPos.x - off, titPos.y), IM_COL32(30, 90, 200, ga), kTitle);
+                        dl->AddText(nullptr, titleFontSz, ImVec2(titPos.x + off, titPos.y), IM_COL32(30, 90, 200, ga), kTitle);
+                        ImGui::SetWindowFontScale(1.0f);
+                    }
+                    // Shadow + main text
+                    ImGui::SetWindowFontScale(tScale * 2.2f);
+                    dl->AddText(nullptr, titleFontSz, ImVec2(titPos.x + 2, titPos.y + 2), IM_COL32(0, 0, 0, 140), kTitle);
+                    dl->AddText(nullptr, titleFontSz, titPos, IM_COL32(130, 195, 255, 255), kTitle);
+                    ImGui::SetWindowFontScale(1.0f);
+                    // Version subtitle
+                    ImVec2 verSz = ImGui::CalcTextSize(kVersion);
+                    dl->AddText(ImVec2(screenPos.x + (vw - verSz.x) * 0.5f, titPos.y + titSz.y + 6.0f),
+                                IM_COL32(90, 120, 160, 200), kVersion);
+
+                    // ── Layout compute ────────────────────────────────────────
+                    // Lazy-load recent saves once (so the list is available for the left panel)
+                    if (startMenuSaves.empty())
+                        startMenuSaves = World::listSaves("saves");
+
+                    const float contentY  = screenPos.y + vh * 0.30f;
+                    const float contentH  = vh * 0.58f;
+                    const float btnW      = std::min(vw * 0.32f, 300.0f);
+                    const float btnH      = 42.0f;
+                    const float btnGap    = 10.0f;
+                    const bool  hasCont   = !lastSessionFile.empty();
+                    const int   btnCount  = 3 + (hasCont ? 1 : 0); // Continue + New + Load + Exit
+                    const float totalBtnH = btnCount * (btnH + btnGap) - btnGap;
+
+                    // Right column: action buttons — right quarter of screen
+                    const float colRX  = screenPos.x + vw * 0.56f;
+                    const float colRBY = contentY + (contentH - totalBtnH) * 0.5f;
+
+                    // Left column: recent worlds — left half of screen
+                    const float colLX  = screenPos.x + vw * 0.04f;
+                    const float colLW  = vw * 0.48f;
+
+                    // ── Left: Recent Worlds panel ─────────────────────────────
+                    {
+                        const char* hdr = startMenuSaves.empty() ? "No saved worlds yet" : "Recent Worlds";
+                        ImVec2 hSz = ImGui::CalcTextSize(hdr);
+                        dl->AddText(ImVec2(colLX, contentY),
+                                    IM_COL32(70, 110, 160, 220), hdr);
+                        // Underline
+                        dl->AddLine(ImVec2(colLX, contentY + hSz.y + 3),
+                                    ImVec2(colLX + colLW * 0.85f, contentY + hSz.y + 3),
+                                    IM_COL32(40, 70, 120, 120), 1.0f);
+
+                        if (startMenuSaves.empty()) {
+                            float gy = contentY + hSz.y + 18.0f;
+                            dl->AddText(ImVec2(colLX + 8, gy),
+                                        IM_COL32(55, 70, 95, 200),
+                                        "Create a new world to see it here.");
+                            gy += ImGui::GetTextLineHeightWithSpacing();
+                            dl->AddText(ImVec2(colLX + 8, gy),
+                                        IM_COL32(45, 55, 75, 160),
+                                        "Saved worlds appear as clickable cards.");
+                        } else {
+                            // Show up to 4 world cards in a vertical list
+                            float cardY   = contentY + hSz.y + 18.0f;
+                            float cardW   = colLW - 8.0f;
+                            float cardH   = 54.0f;
+                            float cardGap = 8.0f;
+                            int   showN   = std::min((int)startMenuSaves.size(), 4);
+                            for (int ci = 0; ci < showN; ++ci) {
+                                const auto& sv = startMenuSaves[ci];
+                                ImVec2 cMin(colLX, cardY);
+                                ImVec2 cMax(colLX + cardW, cardY + cardH);
+                                bool hov = ImGui::IsMouseHoveringRect(cMin, cMax);
+                                // Card bg
+                                dl->AddRectFilled(cMin, cMax,
+                                    hov ? IM_COL32(22, 40, 75, 230) : IM_COL32(14, 22, 42, 200), 6.0f);
+                                // Left accent stripe (different color per index)
+                                uint8_t ar = (ci % 3 == 0) ? 60 : (ci % 3 == 1) ? 40 : 35;
+                                uint8_t ag = (ci % 3 == 0) ? 130 : (ci % 3 == 1) ? 80 : 100;
+                                uint8_t ab = (ci % 3 == 0) ? 220 : (ci % 3 == 1) ? 200 : 160;
+                                dl->AddRectFilled(cMin, ImVec2(cMin.x + 4, cMax.y),
+                                    IM_COL32(ar, ag, ab, hov ? 255 : 160), 6.0f);
+                                // Border
+                                dl->AddRect(cMin, cMax,
+                                    hov ? IM_COL32(60, 110, 200, 130) : IM_COL32(30, 50, 90, 80), 6.0f, 0, 1.0f);
+                                // World name
+                                dl->AddText(ImVec2(cMin.x + 12, cMin.y + 8),
+                                    IM_COL32(200, 220, 255, 240), sv.displayName.c_str());
+                                // Sub-info
+                                char sub[64];
+                                snprintf(sub, sizeof(sub), "Seed: %d  |  %zu chunks", sv.metadata.seed, sv.chunkCount);
+                                dl->AddText(ImVec2(cMin.x + 12, cMin.y + 8 + ImGui::GetTextLineHeightWithSpacing()),
+                                    IM_COL32(90, 115, 155, 190), sub);
+                                // Hover hint
+                                if (hov) {
+                                    ImVec2 hintSz = ImGui::CalcTextSize("Click to load");
+                                    dl->AddText(ImVec2(cMax.x - hintSz.x - 10, cMin.y + (cardH - hintSz.y) * 0.5f),
+                                        IM_COL32(120, 175, 255, 200), "Click to load");
+                                }
+                                if (hov && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+                                    pendingLoadFile = sv.filename;
+
+                                cardY += cardH + cardGap;
+                            }
+                            if ((int)startMenuSaves.size() > 4) {
+                                char moreStr[32];
+                                snprintf(moreStr, sizeof(moreStr), "+ %d more...",
+                                    (int)startMenuSaves.size() - 4);
+                                dl->AddText(ImVec2(colLX + 8, cardY + 4),
+                                    IM_COL32(60, 85, 130, 160), moreStr);
+                            }
+                        }
+                    }
+
+                    // ── Right: Action Buttons ─────────────────────────────────
+                    {
+                        // Section header
+                        const char* hdr2 = "Play";
+                        dl->AddText(ImVec2(colRX, contentY), IM_COL32(70, 110, 160, 220), hdr2);
+                        ImVec2 h2Sz = ImGui::CalcTextSize(hdr2);
+                        dl->AddLine(ImVec2(colRX, contentY + h2Sz.y + 3),
+                                    ImVec2(colRX + btnW, contentY + h2Sz.y + 3),
+                                    IM_COL32(40, 70, 120, 120), 1.0f);
+
+                        // Helper: draw a single action button, return true if clicked
+                        struct BtnDef {
+                            const char* icon;
+                            const char* label;
+                            ImU32 accentNorm, accentHov;
+                            ImU32 textCol;
+                        };
+                        auto drawActionBtn = [&](ImVec2 pos, const BtnDef& b) -> bool {
+                            ImVec2 end(pos.x + btnW, pos.y + btnH);
+                            bool hov = ImGui::IsMouseHoveringRect(pos, end);
+                            // Background
+                            dl->AddRectFilled(pos, end,
+                                hov ? IM_COL32(22, 38, 68, 245) : IM_COL32(12, 18, 36, 220), 6.0f);
+                            // Left accent
+                            dl->AddRectFilled(pos, ImVec2(pos.x + 4, end.y),
+                                hov ? b.accentHov : b.accentNorm, 6.0f);
+                            // Border
+                            dl->AddRect(pos, end,
+                                hov ? IM_COL32(60, 105, 190, 150) : IM_COL32(28, 45, 80, 80), 6.0f, 0, 1.0f);
+                            // Icon
+                            ImVec2 iconSz = ImGui::CalcTextSize(b.icon);
+                            dl->AddText(ImVec2(pos.x + 14, pos.y + (btnH - iconSz.y) * 0.5f),
+                                hov ? IM_COL32(255,255,255,240) : b.textCol, b.icon);
+                            // Label
+                            ImVec2 labSz = ImGui::CalcTextSize(b.label);
+                            dl->AddText(ImVec2(pos.x + 40, pos.y + (btnH - labSz.y) * 0.5f),
+                                hov ? IM_COL32(235, 245, 255, 255) : b.textCol, b.label);
+                            return hov && ImGui::IsMouseClicked(ImGuiMouseButton_Left);
+                        };
+
+                        int ri = 0;
+                        auto nextBtnY = [&]() { return colRBY + ri * (btnH + btnGap); };
+
+                        if (hasCont) {
+                            BtnDef b{">>", "Continue Last Session",
+                                IM_COL32(25, 100, 60, 200), IM_COL32(40, 160, 90, 255),
+                                IM_COL32(160, 240, 180, 220)};
+                            if (drawActionBtn(ImVec2(colRX, nextBtnY()), b))
+                                pendingLoadFile = lastSessionFile;
+                            ++ri;
+                        }
+                        {
+                            BtnDef b{" +", "New World",
+                                IM_COL32(30, 70, 155, 200), IM_COL32(50, 110, 220, 255),
+                                IM_COL32(170, 210, 255, 220)};
+                            if (drawActionBtn(ImVec2(colRX, nextBtnY()), b)) {
+                                std::random_device rd;
+                                int freshSeed = (int)(rd() & 0x7FFFFFFF);
+                                snprintf(newWorldSeedStr, sizeof(newWorldSeedStr), "%d", freshSeed);
+                                // Pre-fill the name as the next available unique slot
+                                std::string autoName = uniqueWorldName("My World");
+                                std::strncpy(newWorldName, autoName.c_str(), sizeof(newWorldName) - 1);
+                                newWorldName[sizeof(newWorldName) - 1] = '\0';
+                                showNewWorldDialog = true;
+                            }
+                            ++ri;
+                        }
+                        {
+                            BtnDef b{" @", "Load World",
+                                IM_COL32(25, 80, 70, 200), IM_COL32(40, 130, 115, 255),
+                                IM_COL32(160, 230, 210, 220)};
+                            if (drawActionBtn(ImVec2(colRX, nextBtnY()), b)) {
+                                startMenuSaves        = World::listSaves("saves");
+                                startMenuSelectedSave = -1;
+                                showLoadWorldDialog   = true;
+                            }
+                            ++ri;
+                        }
+                        // Thin separator before Exit
+                        float sepY = colRBY + ri * (btnH + btnGap) - btnGap * 0.5f;
+                        dl->AddLine(ImVec2(colRX, sepY), ImVec2(colRX + btnW, sepY),
+                                    IM_COL32(40, 55, 85, 100), 1.0f);
+                        {
+                            BtnDef b{" x", "Exit",
+                                IM_COL32(90, 25, 25, 200), IM_COL32(150, 40, 40, 255),
+                                IM_COL32(240, 170, 170, 220)};
+                            if (drawActionBtn(ImVec2(colRX, nextBtnY()), b))
+                                glfwSetWindowShouldClose(renderer.getWindow(), true);
+                        }
+                    }
+
+                    // ── Bottom info bar ───────────────────────────────────────
+                    {
+                        const char* buildInfo = "Voxel-Sim Architect  v0.6 Beta  |  Beta-Dev Branch  |  Build: " __DATE__;
+                        ImVec2 bSz = ImGui::CalcTextSize(buildInfo);
+                        float  bY  = screenPos.y + vh - bSz.y - 10.0f;
+                        dl->AddText(ImVec2(screenPos.x + (vw - bSz.x) * 0.5f, bY),
+                                    IM_COL32(38, 52, 75, 200), buildInfo);
+                    }
+
+                    // (New World / Load World dialogs are BeginPopupModals just before gui.endFrame())
+                } // end inMainMenu
+
+                if (!inMainMenu) {
                 // Draw Crosshair (Minecraft style with shadow)
                 ImDrawList* drawList = ImGui::GetWindowDrawList();
                 ImVec2 center = ImVec2(screenPos.x + viewportSize.x * 0.5f, screenPos.y + viewportSize.y * 0.5f);
@@ -686,46 +1108,90 @@ int main() {
                 drawList->AddLine(ImVec2(center.x - chSize, center.y), ImVec2(center.x + chSize, center.y), IM_COL32(255, 255, 255, 220), chThick);
                 drawList->AddLine(ImVec2(center.x, center.y - chSize), ImVec2(center.x, center.y + chSize), IM_COL32(255, 255, 255, 220), chThick);
 
-                // Draw Hotbar (Minecraft style)
+                // Draw Hotbar — polished dark glass style
                 ImTextureID texId = (ImTextureID)(uintptr_t)atlas.getID();
-                float slotSize = 44.0f;
-                float hbPadding = 4.0f;
+                float slotSize = 46.0f;
+                float hbPadding = 5.0f;
                 float hbWidth = (slotSize * 9.0f) + (hbPadding * 10.0f);
                 float hbHeight = slotSize + (hbPadding * 2.0f);
-                ImVec2 hbPos = ImVec2(screenPos.x + (viewportSize.x - hbWidth) * 0.5f, screenPos.y + viewportSize.y - hbHeight - 10.0f);
-                
-                // Hotbar Background
-                drawList->AddRectFilled(hbPos, ImVec2(hbPos.x + hbWidth, hbPos.y + hbHeight), IM_COL32(30, 30, 30, 200), 2.0f);
-                drawList->AddRect(hbPos, ImVec2(hbPos.x + hbWidth, hbPos.y + hbHeight), IM_COL32(100, 100, 100, 200), 2.0f, 0, 2.0f);
-                
+                ImVec2 hbPos = ImVec2(screenPos.x + (viewportSize.x - hbWidth) * 0.5f, screenPos.y + viewportSize.y - hbHeight - 12.0f);
+
+                const float kBarRound  = 8.0f;
+                const float kSlotRound = 5.0f;
+
+                // Drop shadow
+                drawList->AddRectFilled(
+                    ImVec2(hbPos.x + 3, hbPos.y + 4),
+                    ImVec2(hbPos.x + hbWidth + 3, hbPos.y + hbHeight + 4),
+                    IM_COL32(0, 0, 0, 100), kBarRound);
+
+                // Bar background
+                drawList->AddRectFilled(hbPos, ImVec2(hbPos.x + hbWidth, hbPos.y + hbHeight),
+                    IM_COL32(16, 17, 22, 215), kBarRound);
+
+                // Inner top highlight — subtle glass sheen
+                drawList->AddLine(
+                    ImVec2(hbPos.x + kBarRound, hbPos.y + 1.5f),
+                    ImVec2(hbPos.x + hbWidth - kBarRound, hbPos.y + 1.5f),
+                    IM_COL32(255, 255, 255, 28), 1.0f);
+
+                // Outer border
+                drawList->AddRect(hbPos, ImVec2(hbPos.x + hbWidth, hbPos.y + hbHeight),
+                    IM_COL32(75, 80, 105, 190), kBarRound, 0, 1.5f);
+
                 for (int i = 1; i <= 9; ++i) {
                     ImVec2 slotPos = ImVec2(hbPos.x + hbPadding + (i-1) * (slotSize + hbPadding), hbPos.y + hbPadding);
                     ImVec2 slotEnd = ImVec2(slotPos.x + slotSize, slotPos.y + slotSize);
-                    
-                    // Slot Background (inner shadow effect)
-                    drawList->AddRectFilled(slotPos, slotEnd, IM_COL32(139, 139, 139, 150), 0.0f);
-                    drawList->AddRect(slotPos, slotEnd, IM_COL32(55, 55, 55, 200), 0.0f, 0, 2.0f);
-                    
-                    // Selection Highlight
-                    if (selectedBlock == i) {
-                        drawList->AddRect(ImVec2(slotPos.x - 2, slotPos.y - 2), ImVec2(slotEnd.x + 2, slotEnd.y + 2), IM_COL32(255, 255, 255, 255), 2.0f, 0, 3.0f);
+                    bool sel = (selectedBlock == i);
+
+                    // Slot fill — tinted blue when selected
+                    ImU32 slotBg = sel ? IM_COL32(45, 65, 95, 220) : IM_COL32(32, 33, 42, 210);
+                    drawList->AddRectFilled(slotPos, slotEnd, slotBg, kSlotRound);
+
+                    // Top-edge micro-highlight for inner depth
+                    drawList->AddLine(
+                        ImVec2(slotPos.x + kSlotRound, slotPos.y + 1.0f),
+                        ImVec2(slotEnd.x  - kSlotRound, slotPos.y + 1.0f),
+                        IM_COL32(255, 255, 255, sel ? 35 : 18), 1.0f);
+
+                    // Slot border
+                    ImU32 borderCol = sel ? IM_COL32(100, 175, 255, 255) : IM_COL32(58, 60, 78, 210);
+                    float borderW   = sel ? 2.0f : 1.5f;
+                    drawList->AddRect(slotPos, slotEnd, borderCol, kSlotRound, 0, borderW);
+
+                    // Selection: accent bar at the bottom of the slot
+                    if (sel) {
+                        drawList->AddRectFilled(
+                            ImVec2(slotPos.x + 5, slotEnd.y - 4),
+                            ImVec2(slotEnd.x  - 5, slotEnd.y - 1),
+                            IM_COL32(90, 165, 255, 220), 2.0f);
                     }
 
-                    // Block Icon (Texture)
+                    // Slot number — top-left corner with shadow
+                    char numBuf[4];
+                    snprintf(numBuf, sizeof(numBuf), "%d", i);
+                    drawList->AddText(ImVec2(slotPos.x + 4, slotPos.y + 3),
+                        IM_COL32(0, 0, 0, 130), numBuf);
+                    drawList->AddText(ImVec2(slotPos.x + 3, slotPos.y + 2),
+                        IM_COL32(165, 170, 195, 210), numBuf);
+
+                    // Block icon — slightly inset to leave room for the slot number
                     const auto& def = GameRegistry::getInstance().getBlock(i);
                     int tx = def.texX;
                     int ty = def.texY;
-                    
                     ImVec2 uv0 = ImVec2(tx / 16.0f, ty / 16.0f);
                     ImVec2 uv1 = ImVec2((tx + 1) / 16.0f, (ty + 1) / 16.0f);
-                    drawList->AddImage(texId, ImVec2(slotPos.x + 4, slotPos.y + 4), ImVec2(slotEnd.x - 4, slotEnd.y - 4), uv0, uv1);
+                    drawList->AddImage(texId,
+                        ImVec2(slotPos.x + 7, slotPos.y + 7),
+                        ImVec2(slotEnd.x  - 5, slotEnd.y - 7),
+                        uv0, uv1);
 
-                    // Count (Minecraft style shadow text)
+                    // Item count — bottom-right with shadow
                     char countBuf[16];
                     snprintf(countBuf, 16, "%d", inventory.counts[i]);
-                    ImVec2 textPos = ImVec2(slotPos.x + slotSize - 14, slotPos.y + slotSize - 16);
-                    drawList->AddText(ImVec2(textPos.x + 1, textPos.y + 1), IM_COL32(60, 60, 60, 255), countBuf); // Shadow
-                    drawList->AddText(textPos, IM_COL32(255, 255, 255, 255), countBuf); // Text
+                    ImVec2 textPos = ImVec2(slotPos.x + slotSize - 14, slotPos.y + slotSize - 15);
+                    drawList->AddText(ImVec2(textPos.x + 1, textPos.y + 1), IM_COL32(0, 0, 0, 210), countBuf);
+                    drawList->AddText(textPos, IM_COL32(255, 255, 255, 255), countBuf);
                 }
 
                 // Tool-in-hand: bottom-right corner of viewport, with swing animation
@@ -823,8 +1289,11 @@ int main() {
                         } else {
                             float bn_v = biomeNoise.GetNoise(pwx, pwz);
                             float mn_v = mountainNoise.GetNoise(pwx, pwz);
+                            float in_v = infernalNoise.GetNoise(pwx, pwz);
                             if      (mn_v > 0.42f && bn_v > -0.18f && bn_v < 0.82f) {
                                 currentBiome = BIOME_MOUNTAINS;
+                            } else if (in_v > 0.36f) {
+                                currentBiome = BIOME_ASHWORLD; // infernal override
                             } else if (bn_v < -0.20f) {
                                 currentBiome = BIOME_POLAR;
                             } else if (bn_v <  0.05f) {
@@ -911,6 +1380,79 @@ int main() {
                     }
                 }
 
+                // ── Underwater visual overlay (head submerged in water) ────────────────────────
+                {
+                    const Vec3 uwPos = camera.position();
+                    int uwx = (int)std::floor(uwPos.x);
+                    int uwz = (int)std::floor(uwPos.z);
+                    int uwy = (int)std::floor(uwPos.y);
+                    bool headUnderWater = isWater(world.getBlock(uwx, uwy, uwz));
+                    if (headUnderWater) {
+                        float tw = (float)glfwGetTime();
+                        float vw2 = viewportSize.x, vh2 = viewportSize.y;
+
+                        // Base blue tint over whole screen
+                        drawList->AddRectFilled(
+                            screenPos,
+                            ImVec2(screenPos.x + vw2, screenPos.y + vh2),
+                            IM_COL32(18, 52, 115, 85));
+
+                        // Animated caustic shimmer streaks
+                        for (int ci = 0; ci < 28; ++ci) {
+                            float phase = (float)ci * 1.618f;
+                            float xOff  = fmodf(phase * 71.3f + tw * 22.0f, vw2);
+                            float yOff  = fmodf(phase * 53.7f + tw * 14.0f, vh2);
+                            float len   = 22.0f + 18.0f * std::sin(tw * 0.9f + phase);
+                            float ang   = phase * 0.45f + tw * 0.35f;
+                            int   ca    = (int)(30.0f + 22.0f * std::sin(tw * 1.4f + phase * 1.1f));
+                            drawList->AddLine(
+                                ImVec2(screenPos.x + xOff,                            screenPos.y + yOff),
+                                ImVec2(screenPos.x + xOff + std::cos(ang) * len,      screenPos.y + yOff + std::sin(ang) * len),
+                                IM_COL32(110, 195, 255, ca), 1.5f);
+                        }
+
+                        // Dark blue vignette at all edges
+                        float ew2 = vw2 * 0.24f, eh2 = vh2 * 0.20f;
+                        drawList->AddRectFilledMultiColor(
+                            ImVec2(screenPos.x,         screenPos.y),
+                            ImVec2(screenPos.x + ew2,   screenPos.y + vh2),
+                            IM_COL32(0,18,60,130), IM_COL32(0,18,60,0), IM_COL32(0,18,60,0), IM_COL32(0,18,60,130));
+                        drawList->AddRectFilledMultiColor(
+                            ImVec2(screenPos.x + vw2 - ew2, screenPos.y),
+                            ImVec2(screenPos.x + vw2,        screenPos.y + vh2),
+                            IM_COL32(0,18,60,0), IM_COL32(0,18,60,130), IM_COL32(0,18,60,130), IM_COL32(0,18,60,0));
+                        drawList->AddRectFilledMultiColor(
+                            ImVec2(screenPos.x,        screenPos.y),
+                            ImVec2(screenPos.x + vw2,  screenPos.y + eh2),
+                            IM_COL32(0,18,60,150), IM_COL32(0,18,60,150), IM_COL32(0,18,60,0), IM_COL32(0,18,60,0));
+                        drawList->AddRectFilledMultiColor(
+                            ImVec2(screenPos.x,        screenPos.y + vh2 - eh2),
+                            ImVec2(screenPos.x + vw2,  screenPos.y + vh2),
+                            IM_COL32(0,18,60,0), IM_COL32(0,18,60,0), IM_COL32(0,18,60,150), IM_COL32(0,18,60,150));
+
+                        // Rising air bubbles
+                        static float bubY[20] = {};
+                        static float bubX[20] = {};
+                        static bool  bubInit  = false;
+                        if (!bubInit) {
+                            bubInit = true;
+                            for (int bi = 0; bi < 20; ++bi) {
+                                bubX[bi] = (float)(rand() % 1000) / 1000.0f;
+                                bubY[bi] = (float)(rand() % 1000) / 1000.0f;
+                            }
+                        }
+                        for (int bi = 0; bi < 20; ++bi) {
+                            bubY[bi] -= dt * (0.05f + 0.035f * (float)(bi % 5));
+                            if (bubY[bi] < 0.0f) { bubY[bi] = 1.0f; bubX[bi] = (float)(rand() % 1000) / 1000.0f; }
+                            float bx3 = screenPos.x + bubX[bi] * vw2;
+                            float by3 = screenPos.y + bubY[bi] * vh2;
+                            float bAlpha = 55.0f + 30.0f * std::sin(tw * 2.2f + bi);
+                            float bRad  = 1.8f + (float)(bi % 3) * 0.8f;
+                            drawList->AddCircle(ImVec2(bx3, by3), bRad, IM_COL32(180, 228, 255, (int)bAlpha), 10, 1.0f);
+                        }
+                    }
+                }
+
                 // Warm ambient lava glow at screen edges when near lava (heat shimmer)
                 // Throttled: re-check at most every 0.2s instead of every frame
                 {
@@ -955,25 +1497,74 @@ int main() {
                     }
                 }
 
-                // Player fire overlay (viewport only - dramatic flame bands)
+                // Player fire overlay (viewport only — immersive edge + band flames)
                 if (playerOnFireSeconds > 0.0f) {
                     float t = (float)glfwGetTime();
-                    int bands = 18;
-                    for (int i = 0; i < bands; ++i) {
-                        float y0 = screenPos.y + (viewportSize.y / bands) * i;
-                        float y1 = screenPos.y + (viewportSize.y / bands) * (i + 1);
-                        float wobble  = std::sin(t * 3.5f + i * 1.7f) * 22.0f;
-                        float wobble2 = std::sin(t * 5.0f + i * 2.4f) * 12.0f;
-                        int r = 255;
-                        int g = (int)(80 + 80 * std::sin(t * 2.0f + i * 0.5f));
-                        int b = 15;
-                        // More opaque at bottom (flames rise from below)
-                        float heightFrac = (float)i / (float)(bands - 1);
-                        int alpha = (int)(70.0f - heightFrac * 45.0f);
+                    float vwf = viewportSize.x, vhf = viewportSize.y;
+                    float intensity = std::min(1.0f, playerOnFireSeconds / 3.5f); // ramp up with burn time
+
+                    // Subtle full-screen heat tint
+                    drawList->AddRectFilled(screenPos,
+                        ImVec2(screenPos.x + vwf, screenPos.y + vhf),
+                        IM_COL32(210, 75, 5, (int)(28.0f * intensity)));
+
+                    // Rising flame bands over bottom 60% of screen
+                    for (int fi = 0; fi < 30; ++fi) {
+                        float frac  = (float)fi / 30.0f;
+                        float y0    = screenPos.y + vhf * (0.40f + frac * 0.60f);
+                        float y1    = screenPos.y + vhf * (0.40f + (frac + 1.0f/30.0f) * 0.60f);
+                        float wob1  = std::sin(t * 4.5f + fi * 1.85f) * 38.0f * intensity;
+                        float wob2  = std::cos(t * 7.0f + fi * 1.30f) * 18.0f * intensity;
+                        int   gr    = (int)(45 + 100 * std::sin(t * 2.8f + fi * 0.42f));
+                        int   fa    = (int)((80.0f + frac * 130.0f) * intensity);
                         drawList->AddRectFilled(
-                            ImVec2(screenPos.x + wobble + wobble2, y0),
-                            ImVec2(screenPos.x + viewportSize.x + wobble + wobble2, y1),
-                            IM_COL32(r, g, b, std::max(5, alpha)));
+                            ImVec2(screenPos.x + wob1 + wob2,        y0),
+                            ImVec2(screenPos.x + vwf + wob1 + wob2,  y1),
+                            IM_COL32(255, gr, 0, std::clamp(fa, 0, 200)));
+                    }
+                    // Flame bands wrapping top 20% (fire above head)
+                    for (int fi = 0; fi < 10; ++fi) {
+                        float frac  = (float)fi / 10.0f;
+                        float y0    = screenPos.y + vhf * frac * 0.20f;
+                        float y1    = screenPos.y + vhf * (frac + 0.1f) * 0.20f;
+                        float wob3  = std::sin(t * 6.0f + fi * 2.1f + 3.14f) * 28.0f * intensity;
+                        int   fa2   = (int)((70.0f - frac * 65.0f) * intensity);
+                        drawList->AddRectFilled(
+                            ImVec2(screenPos.x + wob3,        y0),
+                            ImVec2(screenPos.x + vwf + wob3,  y1),
+                            IM_COL32(245, 75, 0, std::clamp(fa2, 0, 180)));
+                    }
+                    // Left-side flame column
+                    {
+                        float fw = vwf * 0.14f * intensity;
+                        for (int fi = 0; fi < 14; ++fi) {
+                            float frac  = (float)fi / 14.0f;
+                            float y0    = screenPos.y + vhf * frac;
+                            float y1    = screenPos.y + vhf * (frac + 1.0f/14.0f);
+                            float wobL  = std::sin(t * 3.8f + fi * 1.7f) * 14.0f * intensity;
+                            int   fa3   = (int)(80.0f * intensity * (1.0f - std::abs(frac - 0.5f) * 1.4f));
+                            if (fa3 > 3)
+                                drawList->AddRectFilled(
+                                    ImVec2(screenPos.x + wobL,        y0),
+                                    ImVec2(screenPos.x + fw + wobL,   y1),
+                                    IM_COL32(255, 55, 5, fa3));
+                        }
+                    }
+                    // Right-side flame column
+                    {
+                        float fw = vwf * 0.14f * intensity;
+                        for (int fi = 0; fi < 14; ++fi) {
+                            float frac  = (float)fi / 14.0f;
+                            float y0    = screenPos.y + vhf * frac;
+                            float y1    = screenPos.y + vhf * (frac + 1.0f/14.0f);
+                            float wobR  = std::sin(t * 4.2f + fi * 1.6f + 1.57f) * 14.0f * intensity;
+                            int   fa4   = (int)(80.0f * intensity * (1.0f - std::abs(frac - 0.5f) * 1.4f));
+                            if (fa4 > 3)
+                                drawList->AddRectFilled(
+                                    ImVec2(screenPos.x + vwf - fw + wobR,  y0),
+                                    ImVec2(screenPos.x + vwf + wobR,       y1),
+                                    IM_COL32(255, 55, 5, fa4));
+                        }
                     }
                 }
 
@@ -1080,6 +1671,64 @@ int main() {
                         ImU32 heartCol = IM_COL32(220, 30, 30, 255); // Red
                         
                         drawHeart(pos, heartSize, heartCol, half, empty);
+                    }
+
+                    // ── Food / Hunger bar (Survival only) ───────────────────────────
+                    if (!isCreativeMode) {
+                        // Right-aligned mirror of hearts
+                        float foodStartX = hbX + hbWidth - 10.0f * spacing;
+                        float foodStartY = startY;
+                        int currentFood = (int)std::round(playerHunger); // 0..20
+
+                        // Draw a drumstick (chicken leg) icon per shank
+                        auto drawShank = [&](ImVec2 pos, float sz, ImU32 col, bool half, bool empty) {
+                            float meatR  = sz * 0.38f;
+                            float meatCX = pos.x + sz * 0.5f;
+                            float meatCY = pos.y + sz * 0.32f;
+                            float boneW  = sz * 0.18f;
+                            float boneH  = sz * 0.48f;
+                            float boneCX = meatCX;
+                            float boneCY = meatCY + meatR * 0.75f;
+                            ImU32 bgCol  = IM_COL32(40, 40, 40, 200);
+                            // Background shapes
+                            drawList->AddCircleFilled(ImVec2(meatCX, meatCY), meatR, bgCol, 16);
+                            drawList->AddRectFilled(
+                                ImVec2(boneCX - boneW * 0.5f, boneCY),
+                                ImVec2(boneCX + boneW * 0.5f, boneCY + boneH), bgCol, 3.0f);
+                            // Filled
+                            if (!empty) {
+                                if (!half) {
+                                    drawList->AddCircleFilled(ImVec2(meatCX, meatCY), meatR, col, 16);
+                                } else {
+                                    // Half shank: one slightly shifted smaller circle
+                                    drawList->AddCircleFilled(
+                                        ImVec2(meatCX - meatR * 0.18f, meatCY), meatR * 0.72f, col, 16);
+                                }
+                                drawList->AddRectFilled(
+                                    ImVec2(boneCX - boneW * 0.5f, boneCY),
+                                    ImVec2(boneCX + boneW * 0.5f, boneCY + boneH),
+                                    IM_COL32(180, 140, 70, 210), 3.0f);
+                            }
+                            // Outlines
+                            drawList->AddCircle(ImVec2(meatCX, meatCY), meatR,
+                                IM_COL32(0,0,0,220), 16, 1.5f);
+                            drawList->AddRect(
+                                ImVec2(boneCX - boneW * 0.5f, boneCY),
+                                ImVec2(boneCX + boneW * 0.5f, boneCY + boneH),
+                                IM_COL32(0,0,0,200), 3.0f, 0, 1.0f);
+                        };
+
+                        for (int i = 0; i < 10; ++i) {
+                            ImVec2 pos(foodStartX + i * spacing, foodStartY);
+                            int foodVal = (i + 1) * 2;
+                            bool empty = (currentFood < foodVal - 1);
+                            bool half  = (currentFood == foodVal - 1);
+                            // Colour shifts to dull amber when starving
+                            ImU32 shankCol = (playerHunger <= 6.0f)
+                                ? IM_COL32(175, 115, 25, 255)
+                                : IM_COL32(215, 162, 48, 255);
+                            drawShank(pos, heartSize, shankCol, half, empty);
+                        }
                     }
                 }
 
@@ -1258,6 +1907,7 @@ int main() {
                         drawList->AddRectFilled(screenPos, ImVec2(screenPos.x + viewportSize.x, screenPos.y + viewportSize.y), fc);
                     }
                 }
+                } // end !inMainMenu
             }
         }
         const bool viewportHovered = ImGui::IsWindowHovered();
@@ -1322,6 +1972,17 @@ int main() {
                     meta.frequency = worldFrequency;
                     meta.baseHeight = worldBaseHeight;
                     meta.worldTime = worldTime;
+                    // v2: player position
+                    Vec3 camSavePos = camera.position();
+                    meta.playerX = camSavePos.x;
+                    meta.playerY = camSavePos.y;
+                    meta.playerZ = camSavePos.z;
+                    // v3: orientation, game mode, progression
+                    meta.playerYaw    = camera.yawDegrees();
+                    meta.playerPitch  = camera.pitchDegrees();
+                    meta.gameMode     = isCreativeMode ? 0 : 1;
+                    meta.playerLevel  = playerLevel;
+                    meta.blocksPlaced = statBlocksPlaced;
 
                     std::string path = "saves/" + safeName + ".vsa";
                     world.save(path, meta);
@@ -1334,11 +1995,29 @@ int main() {
                 }
                 ImGui::SameLine();
                 if (ImGui::Button("New World")) {
+                    // Assign a fresh random seed so each world is unique
+                    { std::random_device rd; worldSeed = (int)(rd() & 0x7FFFFFFF); }
+                    noise.SetSeed(worldSeed);
+                    biomeNoise.SetSeed(worldSeed + 20);
+                    continentalNoise.SetSeed(worldSeed + 10);
+                    mountainNoise.SetSeed(worldSeed + 1);
+                    infernalNoise.SetSeed(worldSeed + 95);
+                    // If the current world was never saved, orphan-clean its cache
+                    if (loadedWorldFile.empty()) world.clearCacheDir();
                     world.clear();
                     fluidSim.clear();
+                    snowParticles.clear();
+                    lavaParticles.clear();
                     loadedWorldFile.clear();
+                    // Auto-increment name so it never silently overwrites an existing save
+                    {
+                        std::string autoN = uniqueWorldName(worldSaveName);
+                        std::strncpy(worldSaveName, autoN.c_str(), sizeof(worldSaveName)-1);
+                        worldSaveName[sizeof(worldSaveName)-1] = '\0';
+                    }
                     camera.setPosition({0.0f, (float)(worldBaseHeight + 20), 0.0f});
                     spawnPosition = {0.0f, (float)(worldBaseHeight + 20), 0.0f};
+                    worldInitialized = true;
                     menuMode = false; // enter world mode immediately
                 }
 
@@ -1367,6 +2046,10 @@ int main() {
                         bool selected = false;
                         if (ImGui::Selectable("##worldEntry", &selected, ImGuiSelectableFlags_SpanAllColumns, ImVec2(0, 50))) {
                             WorldMetadata loadedMeta;
+                            // Orphan-clean cache of any unsaved current world
+                            if (loadedWorldFile.empty()) world.clearCacheDir();
+                            snowParticles.clear();
+                            lavaParticles.clear();
                             if (world.load(save.filename, loadedMeta)) {
                                 fluidSim.clear();
                                 std::strncpy(worldSaveName, loadedMeta.name, sizeof(worldSaveName) - 1);
@@ -1385,10 +2068,35 @@ int main() {
                                 continentalNoise.SetFrequency(worldFrequency * 0.07f);
                                 mountainNoise.SetSeed(worldSeed + 1);
                                 mountainNoise.SetFrequency(worldFrequency * 0.55f);
+                                infernalNoise.SetSeed(worldSeed + 95);
+                                infernalNoise.SetFrequency(worldFrequency * 0.022f);
 
                                 camera.setPosition({0.0f, (float)(worldBaseHeight + 20), 0.0f});
                                 spawnPosition = {0.0f, (float)(worldBaseHeight + 20), 0.0f}; // record spawn for respawn
+                                // v2+: restore last player position
+                                if (loadedMeta.version >= 2 &&
+                                    (loadedMeta.playerX != 0.0f || loadedMeta.playerY != 0.0f || loadedMeta.playerZ != 0.0f)) {
+                                    camera.setPosition({loadedMeta.playerX, loadedMeta.playerY, loadedMeta.playerZ});
+                                }
+                                // v3+: restore orientation, game mode, player level
+                                if (loadedMeta.version >= 3) {
+                                    if (loadedMeta.playerYaw != 0.0f || loadedMeta.playerPitch != 0.0f)
+                                        camera.setYawPitch(loadedMeta.playerYaw, loadedMeta.playerPitch);
+                                    isCreativeMode   = (loadedMeta.gameMode == 0);
+                                    playerLevel      = loadedMeta.playerLevel;
+                                    statBlocksPlaced = loadedMeta.blocksPlaced;
+                                } else {
+                                    isCreativeMode = true; // legacy saves default to Creative
+                                    playerLevel = 1; playerXP = 0.0f;
+                                    statBlocksPlaced = 0; statBlocksMined = 0;
+                                }
+                                // Always reset player state on load
+                                playerHunger = 20.0f; playerSaturation = 5.0f;
+                                playerExhaustion = 0.0f; playerHp = 20.0f;
+                                fallDistance = 0.0f; playerOxygen = 20.0f;
                                 menuMode = false; // enter world mode so player can move immediately
+                                worldInitialized = true;
+                                { std::ofstream scf("session.cfg"); scf << save.filename << "\n"; }
                             }
                             showWorldList = false;
                         }
@@ -1525,16 +2233,19 @@ int main() {
             }
             eWasDown = eDown;
 
+            static float s_lastJumpTime  = -999.0f; // for double-tap detect
+            static bool  spaceWasDownJump = false;   // tracks previous frame's Space state, used only for jump edge detection
             if (allowKeyboard) {
-                // Fly Toggle (Double Tap Space)
+                // Fly Toggle (Double Tap Space) — creative only
                 bool spaceDown = (glfwGetKey(renderer.getWindow(), GLFW_KEY_SPACE) == GLFW_PRESS);
                 if (spaceDown && !spaceWasDown) {
                     if (totalTime - lastSpacePressTime < 0.25f) {
-                        isFlying = !isFlying;
+                        if (isCreativeMode) isFlying = !isFlying;
                     }
                     lastSpacePressTime = totalTime;
                 }
                 spaceWasDown = spaceDown;
+                if (!isCreativeMode) isFlying = false; // Survival players cannot fly
             }
 
             if (allowMouse) {
@@ -1695,6 +2406,10 @@ int main() {
                                     }
                                     world.setBlock(res.x, res.y, res.z, 0);
                                     AudioManager::getInstance().playBlockBreakSound(type, { (float)res.x, (float)res.y, (float)res.z }, camera.position());
+                                    ++statBlocksMined;
+                                    // XP gain: 1 XP per block mined; level up every 100 XP
+                                    playerXP += 1.0f;
+                                    while (playerXP >= 100.0f) { playerXP -= 100.0f; ++playerLevel; }
 
                                     // Activate any dormant generation fluids that now have a path to flow.
                                     // This is the "block update" event: fluid only wakes up when a
@@ -1728,6 +2443,7 @@ int main() {
                         if (inventory.counts[selectedBlock] > 0) {
                             if (res.hit) {
                                 world.setBlock(res.x + res.nx, res.y + res.ny, res.z + res.nz, selectedBlock);
+                                ++statBlocksPlaced;
                                 if (selectedBlock == BLOCK_WATER || selectedBlock == BLOCK_LAVA) {
                                     fluidSim.onFluidPlaced(
                                         res.x + res.nx, res.y + res.ny, res.z + res.nz,
@@ -1785,7 +2501,7 @@ int main() {
                 }
 
                 if (inWater) speedMultiplier *= 0.65f;
-                if (inLava) speedMultiplier *= 0.25f;
+                if (inLava)  speedMultiplier *= 0.15f; // very viscous — much slower than water
                 // Lava sets player on fire (managed in environmental damage section below)
 
                 const float speed = baseSpeed * speedMultiplier;
@@ -1801,42 +2517,89 @@ int main() {
                 if (glfwGetKey(renderer.getWindow(), GLFW_KEY_SPACE) == GLFW_PRESS) up += speed * dt;
                 if (glfwGetKey(renderer.getWindow(), GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS) up -= speed * dt;
 
-                // Water physics: surface floating, swimming, diving
-                if (inWater && !isFlying) {
-                    if (onWaterSurface) {
-                        // At water surface: float in place, no oscillation
-                        if (glfwGetKey(renderer.getWindow(), GLFW_KEY_SPACE) == GLFW_PRESS) {
-                            up = speed * dt * 0.8f; // Jump out / swim up
-                        } else if (glfwGetKey(renderer.getWindow(), GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS) {
-                            up = -speed * dt * 0.5f; // Dive down
-                        } else {
-                            up = 0.0f; // Float in place
-                        }
+                // Water physics: sinking by default — press W/Up to stay afloat, Space to swim up.
+                // Lava physics: extremely viscous — gravity disabled, barely swimmable.
+                if (inLava && !isFlying) {
+                    // Lava: treat like very thick fluid. Gravity is overridden below.
+                    if (glfwGetKey(renderer.getWindow(), GLFW_KEY_SPACE) == GLFW_PRESS) {
+                        up = speed * dt * 0.30f; // barely able to swim up
+                    } else if (glfwGetKey(renderer.getWindow(), GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS) {
+                        up = -speed * dt * 0.20f; // sink faster
                     } else {
-                        // Fully submerged: buoyancy
-                        if (glfwGetKey(renderer.getWindow(), GLFW_KEY_SPACE) == GLFW_PRESS) {
-                            up = speed * dt * 0.8f; // Swim up
-                        } else if (glfwGetKey(renderer.getWindow(), GLFW_KEY_LEFT_SHIFT) != GLFW_PRESS) {
-                            up = speed * dt * 0.15f; // Gentle buoyancy
-                        }
+                        up = -speed * dt * 0.06f; // passive slow sinking in viscous lava
+                    }
+                } else if (inWater && !isFlying) {
+                    bool wOrUpWater = (glfwGetKey(renderer.getWindow(), GLFW_KEY_W)  == GLFW_PRESS)
+                                   || (glfwGetKey(renderer.getWindow(), GLFW_KEY_UP) == GLFW_PRESS);
+                    bool spaceWater = (glfwGetKey(renderer.getWindow(), GLFW_KEY_SPACE)      == GLFW_PRESS);
+                    bool shiftWater = (glfwGetKey(renderer.getWindow(), GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS);
+
+                    // Detect solid floor directly below the player while submerged.
+                    // pyFeet is already computed; check one voxel further down.
+                    bool onWaterFloor = world.isSolid(px, (int)std::floor(camPos.y - 1.75f), pz);
+
+                    if (spaceWater) {
+                        up =  speed * dt * 0.92f;  // swim up strongly
+                    } else if (shiftWater) {
+                        up = -speed * dt * 0.55f;  // dive down deliberately
+                    } else if (wOrUpWater) {
+                        up =  4.5f * dt;            // tread / pull off floor
+                    } else if (onWaterFloor) {
+                        up =  1.2f * dt;            // buoyancy: rise gently from the bottom when idle
+                    } else {
+                        up = -1.0f * dt;            // gentle passive sink (reduced from -1.5)
                     }
                 }
 
-                // Gravity if not flying and not in water
+                // Gravity — skipped when flying, in water, or in lava (all handled above)
                 static float verticalVelocity = 0.0f;
-                if (!isFlying && !inWater) {
-                    bool onGround = world.isSolid(px, (int)std::floor(camPos.y - 1.6f), pz);
-                    if (!onGround) {
-                        verticalVelocity -= 28.0f * dt;
+                // Coyote time: allow jump for a short window after walking off an edge
+                static float coyoteTimer = 0.0f;
+                // Always sync the Space-key state used by the jump-fire logic below
+                {
+                    bool spaceNowJump = (glfwGetKey(renderer.getWindow(), GLFW_KEY_SPACE) == GLFW_PRESS);
+                    spaceWasDownJump = spaceNowJump;
+                }
+                if (!isFlying && !inWater && !inLava) {
+                    bool onGround = world.isSolid(px, (int)std::floor(camPos.y - 1.62f), pz);
+                    if (onGround) {
+                        coyoteTimer  = 0.12f; // reset coyote window each frame on ground
+                        fallDistance = 0.0f;
+                        if (verticalVelocity < 0.0f) verticalVelocity = 0.0f;
                     } else {
-                        if (verticalVelocity < 0) verticalVelocity = 0;
-                        if (glfwGetKey(renderer.getWindow(), GLFW_KEY_SPACE) == GLFW_PRESS) {
-                            verticalVelocity = 10.0f;
-                        }
+                        // Gravity: use 22 m/s² for a more refined, floaty arc
+                        verticalVelocity -= 22.0f * dt;
+                        // Terminal velocity cap: prevents extremely fast falling
+                        if (verticalVelocity < -26.0f) verticalVelocity = -26.0f;
+                        // Decay coyote timer — becomes 0 shortly after leaving ground
+                        coyoteTimer = std::max(0.0f, coyoteTimer - (float)dt);
+                        // Track fall distance only while falling meaningfully
+                        if (!isCreativeMode && verticalVelocity < -1.5f)
+                            fallDistance += std::abs(verticalVelocity) * (float)dt;
                     }
+
+                    // Jump input: edge-detect on Space
+                    bool spaceNowJump2 = (glfwGetKey(renderer.getWindow(), GLFW_KEY_SPACE) == GLFW_PRESS);
+                    static bool spaceOnGroundPrev = false;
+                    bool spaceEdge = spaceNowJump2 && !spaceOnGroundPrev;
+                    spaceOnGroundPrev = spaceNowJump2;
+                    // Allow jump if on ground OR within coyote window; block while going up
+                    bool canJump = (onGround || coyoteTimer > 0.0f) && verticalVelocity <= 0.05f;
+                    if (spaceEdge && canJump) {
+                        bool isDoubleTap = (totalTime - s_lastJumpTime < 0.22f);
+                        fallDistance     = 0.0f;
+                        // Refined jump speeds: regular 6.2 m/s, double-tap 9.0 m/s
+                        verticalVelocity = isDoubleTap ? 9.0f : 6.2f;
+                        coyoteTimer      = 0.0f; // consume coyote window
+                        s_lastJumpTime   = totalTime;
+                    }
+
                     up += verticalVelocity * dt;
                 } else {
                     verticalVelocity = 0.0f;
+                    coyoteTimer      = 0.0f;
+                    fallDistance     = 0.0f; // Flying / in water / in lava — no fall damage
+                    // In lava: the 'up' was already set by the lava physics block above
                 }
 
                 // Collision Detection (Sliding + Step-Up)
@@ -1863,10 +2626,10 @@ int main() {
                 if (!checkColl(posWithX)) {
                     camera.setPosition(posWithX);
                 } else {
-                    // Step-up check for X
+                    // Step-up check for X: only when on or near ground, max ~0.6 block height
                     Vec3 stepUpX = posWithX;
-                    stepUpX.y += 1.1f; 
-                    if (!checkColl(stepUpX)) {
+                    stepUpX.y += 0.6f;
+                    if (verticalVelocity >= -1.0f && !checkColl(stepUpX)) {
                         camera.setPosition(stepUpX); // Successfully stepped up
                     }
                 }
@@ -1877,10 +2640,10 @@ int main() {
                 if (!checkColl(posWithZ)) {
                     camera.setPosition(posWithZ);
                 } else {
-                    // Step-up check for Z
+                    // Step-up check for Z: only when on or near ground, max ~0.6 block height
                     Vec3 stepUpZ = posWithZ;
-                    stepUpZ.y += 1.1f;
-                    if (!checkColl(stepUpZ)) {
+                    stepUpZ.y += 0.6f;
+                    if (verticalVelocity >= -1.0f && !checkColl(stepUpZ)) {
                         camera.setPosition(stepUpZ); // Successfully stepped up
                     }
                 }
@@ -1892,13 +2655,24 @@ int main() {
                     camera.setPosition(posWithY);
                 } else {
                     if (up < 0) { // Hit ground
+                        // Fall damage (survival, > 3 blocks fallen = start taking damage)
+                        if (!isCreativeMode && fallDistance > 3.0f) {
+                            float dmg = std::floor(fallDistance - 3.0f);
+                            if (dmg > 0.0f && playerInvincTimer <= 0.0f) {
+                                playerHp = std::max(0.0f, playerHp - dmg);
+                                playerHurtTimer   = 0.35f;
+                                playerInvincTimer = 0.5f;
+                            }
+                        }
+                        fallDistance = 0.0f;
                         verticalVelocity = 0.0f;
                         // Snap to exact block height to prevent jitter
                         Vec3 snapped = camera.position();
                         snapped.y = std::ceil(snapped.y - 1.6f) + 1.6f;
                         camera.setPosition(snapped);
-                    } else { // Hit ceiling
-                        verticalVelocity = -2.0f; // Bonk head, start falling
+                    } else { // Hit ceiling while jumping — kill upward velocity immediately
+                        verticalVelocity = 0.0f;
+                        fallDistance     = 0.0f;
                     }
                 }
 
@@ -1911,6 +2685,48 @@ int main() {
                         p.y = 1.65f;
                         camera.setPosition(p);
                         if (verticalVelocity < 0.0f) verticalVelocity = 0.0f;
+                    }
+                }
+
+                // ── Hunger / Saturation system (Survival only) ─────────────────────
+                if (!isCreativeMode) {
+                    // Exhaustion from walking/sprinting
+                    Vec3 newPos = camera.position();
+                    float movedDist = std::sqrt(
+                        (newPos.x - oldPos.x)*(newPos.x - oldPos.x) +
+                        (newPos.z - oldPos.z)*(newPos.z - oldPos.z));
+                    playerExhaustion += movedDist * (isSprinting ? 0.025f : 0.005f);
+                    // Overflow exhaustion → drain saturation → drain hunger
+                    while (playerExhaustion >= 4.0f) {
+                        playerExhaustion -= 4.0f;
+                        if (playerSaturation > 0.0f)
+                            playerSaturation = std::max(0.0f, playerSaturation - 1.0f);
+                        else
+                            playerHunger = std::max(0.0f, playerHunger - 1.0f);
+                    }
+                    // HP regen when well-fed (hunger >= 18, like Minecraft)
+                    if (playerHunger >= 18.0f && playerHp < 20.0f) {
+                        hungerRegenTimer += (float)dt;
+                        if (hungerRegenTimer >= 4.0f) {
+                            hungerRegenTimer = 0.0f;
+                            playerHp = std::min(20.0f, playerHp + 1.0f);
+                        }
+                    } else {
+                        hungerRegenTimer = 0.0f;
+                    }
+                    // Starvation (hunger == 0): drain HP but never below 1
+                    if (playerHunger <= 0.0f && playerHp > 1.0f) {
+                        hungerStarveTimer += (float)dt;
+                        if (hungerStarveTimer >= 4.0f) {
+                            hungerStarveTimer = 0.0f;
+                            if (playerInvincTimer <= 0.0f) {
+                                playerHp = std::max(1.0f, playerHp - 1.0f);
+                                playerHurtTimer   = 0.35f;
+                                playerInvincTimer = 0.5f;
+                            }
+                        }
+                    } else {
+                        hungerStarveTimer = 0.0f;
                     }
                 }
 
@@ -2225,14 +3041,15 @@ int main() {
             // Cap queue to avoid unbounded growth from large water bodies
             while (waterFluidQueue.size() > 3000) waterFluidQueue.pop_front();
             // --- Random sampling (secondary, keeps active streams ticking) ---
-            // Dormant (generation-placed) fluids are excluded — they must be
-            // activated explicitly via fluidSim.onBlockChanged().
+            // Queue-based propagation above handles the vast majority of flow;
+            // random sampling is just a safety net. Reduced from 4×60 to 2×20
+            // (same coverage because queue already processes 400 blocks).
             int px = (int)std::floor(camera.position().x / Chunk::SizeX);
             int pz = (int)std::floor(camera.position().z / Chunk::SizeZ);
-            for (int i = 0; i < 4; ++i) {
+            for (int i = 0; i < 2; ++i) {
                 int rx = px + (rand() % 7 - 3);
                 int rz = pz + (rand() % 7 - 3);
-                for (int j = 0; j < 60; ++j) {
+                for (int j = 0; j < 20; ++j) {
                     int vx = rx * Chunk::SizeX + (rand() % Chunk::SizeX);
                     int vz = rz * Chunk::SizeZ + (rand() % Chunk::SizeZ);
                     int vy = rand() % (Chunk::SizeY - 2) + 1;
@@ -2259,13 +3076,13 @@ int main() {
                 ++qProcessed;
             }
             while (lavaFluidQueue.size() > 1500) lavaFluidQueue.pop_front();
-            // Random sampling (secondary)
+            // Random sampling (secondary) — reduced from 3×50 to 1×20
             int px = (int)std::floor(camera.position().x / Chunk::SizeX);
             int pz = (int)std::floor(camera.position().z / Chunk::SizeZ);
-            for (int i = 0; i < 3; ++i) {
+            for (int i = 0; i < 1; ++i) {
                 int rx = px + (rand() % 9 - 4);
                 int rz = pz + (rand() % 9 - 4);
-                for (int j = 0; j < 50; ++j) {
+                for (int j = 0; j < 20; ++j) {
                     int vx = rx * Chunk::SizeX + (rand() % Chunk::SizeX);
                     int vz = rz * Chunk::SizeZ + (rand() % Chunk::SizeZ);
                     int vy = rand() % (Chunk::SizeY - 2) + 1;
@@ -2282,6 +3099,15 @@ int main() {
         fireSimTimer += (float)dt;
         if (fireSimTimer >= 0.4f) {
             fireSimTimer = 0.0f;
+
+            // Hard cap: prevent unbounded iteration cost in ashworld/volcano biomes.
+            // If more fire blocks exist than the limit, prune the oldest tracked entries
+            // so the per-tick loop stays O(kMaxFires) regardless of biome.
+            static constexpr size_t kMaxFires = 300;
+            while (burnTimers.size() > kMaxFires)
+                burnTimers.erase(burnTimers.begin());
+            while (blockBurnTimers.size() > kMaxFires / 2)
+                blockBurnTimers.erase(blockBurnTimers.begin());
 
             auto fireKey = [](int x, int y, int z) -> int64_t {
                 return ((int64_t)((x + 32768) & 0xFFFF) << 32)
@@ -2306,9 +3132,19 @@ int main() {
             int fpx = (int)std::floor(camera.position().x);
             int fpz = (int)std::floor(camera.position().z);
 
-            // 1. Lava ignites adjacent flammable blocks (3D scan, tightened range for performance)
-            // Reduced from ±12/step2/full-Y to ±8/step2/Y<60 — ~9x fewer iterations
-            for (int ix = fpx - 8; ix <= fpx + 8; ix += 2) {
+            // 1. Lava ignites adjacent flammable blocks.
+            // Fast pre-check: sample 8 positions near the player at step 4.
+            // If none are lava we skip the full scan (~300 getBlock calls) entirely.
+            // This makes the common case (no nearby lava) nearly free.
+            bool lavaNearby = false;
+            for (int ix = fpx - 8; ix <= fpx + 8 && !lavaNearby; ix += 4) {
+                for (int iz = fpz - 8; iz <= fpz + 8 && !lavaNearby; iz += 4) {
+                    for (int iy = 1; iy < std::min(60, Chunk::SizeY - 2) && !lavaNearby; iy += 8) {
+                        if (world.getBlock(ix, iy, iz) == BLOCK_LAVA) lavaNearby = true;
+                    }
+                }
+            }
+            for (int ix = fpx - 8; ix <= fpx + 8 && lavaNearby; ix += 2) {
                 for (int iz = fpz - 8; iz <= fpz + 8; iz += 2) {
                     for (int iy = 1; iy < std::min(60, Chunk::SizeY - 2); iy += 2) {
                         if (world.getBlock(ix, iy, iz) != BLOCK_LAVA) continue;
@@ -2443,7 +3279,10 @@ int main() {
             }
             for (auto k : toRemove) burnTimers.erase(k);
             // Apply deferred new fire entries (safe: no longer inside burnTimers iteration)
+            // Only add until we'd hit the size cap — prevents a single flood-fill tick
+            // from adding hundreds of entries and spiking the next iteration.
             for (auto& [nk, nv] : newFireEntries) {
+                if (burnTimers.size() >= kMaxFires) break;
                 if (burnTimers.find(nk) == burnTimers.end())
                     burnTimers[nk] = nv;
             }
@@ -2465,17 +3304,54 @@ int main() {
             // Water extinguishes fire on player
             if (epInWater) playerOnFireSeconds = 0.0f;
 
+            // ── Drowning / Oxygen system (Survival + Creative) ───────────────────────
+            // Drowning occurs when the player's eyes (camera position) are below water.
+            {
+                int pyH = (int)std::floor(camPos2.y);
+                bool headUnder = isWater(world.getBlock(epx, pyH, epz));
+                if (headUnder) {
+                    // Drain oxygen — 2 bubbles per second (runs out in ~10s)
+                    oxygenDrainTimer += dt;
+                    while (oxygenDrainTimer >= 0.5f) {  // tick every 0.5s
+                        oxygenDrainTimer -= 0.5f;
+                        playerOxygen = std::max(0.0f, playerOxygen - 1.0f);
+                    }
+                    // When oxygen is depleted, deal drowning damage in Survival (2 HP / 0.5s = 4 HP/s)
+                    if (playerOxygen <= 0.0f && !isCreativeMode) {
+                        drownDmgTimer += dt;
+                        while (drownDmgTimer >= 0.5f) {  // tick every 0.5s
+                            drownDmgTimer -= 0.5f;
+                            // Drowning bypasses normal invincibility — it ticks regardless
+                            playerHp          = std::max(0.0f, playerHp - 2.0f);
+                            playerHurtTimer   = 0.15f;
+                            // Short drown-specific invincibility so other hits still register
+                            playerInvincTimer = std::max(playerInvincTimer, 0.1f);
+                        }
+                    } else {
+                        drownDmgTimer = 0.0f;
+                    }
+                } else {
+                    // Refill oxygen when surfaced (4 bubbles/sec — fast recovery)
+                    if (playerOxygen < 20.0f)
+                        playerOxygen = std::min(20.0f, playerOxygen + dt * 4.0f);
+                    oxygenDrainTimer = 0.0f;
+                    drownDmgTimer    = 0.0f;
+                }
+            }
+
             // Lava: direct contact damage (4 HP/sec, like Minecraft) + set on fire for 15s
             static float lavaPlayerDmgTimer = 0.0f;
             if (epInLava) {
                 playerOnFireSeconds = 15.0f; // Lava sets you on fire for a long time
-                lavaPlayerDmgTimer += (float)dt;
-                if (lavaPlayerDmgTimer >= 0.5f) { // 4 HP/sec = 2 HP per 0.5s
-                    lavaPlayerDmgTimer = 0.0f;
-                    if (playerInvincTimer <= 0.0f) {
-                        playerHp = std::max(0.0f, playerHp - 2.0f);
-                        playerHurtTimer   = 0.35f;
-                        playerInvincTimer = 0.5f;
+                if (!isCreativeMode) {
+                    lavaPlayerDmgTimer += (float)dt;
+                    if (lavaPlayerDmgTimer >= 0.5f) { // 4 HP/sec = 2 HP per 0.5s
+                        lavaPlayerDmgTimer = 0.0f;
+                        if (playerInvincTimer <= 0.0f) {
+                            playerHp = std::max(0.0f, playerHp - 2.0f);
+                            playerHurtTimer   = 0.35f;
+                            playerInvincTimer = 0.5f;
+                        }
                     }
                 }
             } else {
@@ -2486,13 +3362,15 @@ int main() {
             static float firePlayerDmgTimer = 0.0f;
             if (epInFire && !epInLava) {
                 playerOnFireSeconds = std::max(playerOnFireSeconds, 8.0f);
-                firePlayerDmgTimer += (float)dt;
-                if (firePlayerDmgTimer >= 1.0f) {
-                    firePlayerDmgTimer = 0.0f;
-                    if (playerInvincTimer <= 0.0f) {
-                        playerHp = std::max(0.0f, playerHp - 1.0f);
-                        playerHurtTimer   = 0.35f;
-                        playerInvincTimer = 0.5f;
+                if (!isCreativeMode) {
+                    firePlayerDmgTimer += (float)dt;
+                    if (firePlayerDmgTimer >= 1.0f) {
+                        firePlayerDmgTimer = 0.0f;
+                        if (playerInvincTimer <= 0.0f) {
+                            playerHp = std::max(0.0f, playerHp - 1.0f);
+                            playerHurtTimer   = 0.35f;
+                            playerInvincTimer = 0.5f;
+                        }
                     }
                 }
             } else {
@@ -2503,13 +3381,15 @@ int main() {
             static float burnPlayerDmgTimer = 0.0f;
             if (playerOnFireSeconds > 0.0f && !epInLava && !epInFire) {
                 playerOnFireSeconds = std::max(0.0f, playerOnFireSeconds - (float)dt);
-                burnPlayerDmgTimer += (float)dt;
-                if (burnPlayerDmgTimer >= 1.0f) {
-                    burnPlayerDmgTimer = 0.0f;
-                    if (playerInvincTimer <= 0.0f) {
-                        playerHp = std::max(0.0f, playerHp - 1.0f);
-                        playerHurtTimer   = 0.35f;
-                        playerInvincTimer = 0.5f;
+                if (!isCreativeMode) {
+                    burnPlayerDmgTimer += (float)dt;
+                    if (burnPlayerDmgTimer >= 1.0f) {
+                        burnPlayerDmgTimer = 0.0f;
+                        if (playerInvincTimer <= 0.0f) {
+                            playerHp = std::max(0.0f, playerHp - 1.0f);
+                            playerHurtTimer   = 0.35f;
+                            playerInvincTimer = 0.5f;
+                        }
                     }
                 }
             } else if (!epInFire && !epInLava) {
@@ -2539,22 +3419,54 @@ int main() {
 
         auto mobPool = registry.getPool<Mob>();
         if (mobPool) {
-            // Mob-mob separation pass (keeps mobs from stacking)
-            for (size_t i = 0; i < mobPool->components.size(); ++i) {
-                Transform* ti = registry.getComponent<Transform>(mobPool->indexToEntity[i]);
-                if (!ti) continue;
-                for (size_t j = i + 1; j < mobPool->components.size(); ++j) {
-                    Transform* tj = registry.getComponent<Transform>(mobPool->indexToEntity[j]);
-                    if (!tj) continue;
-                    Vec3 diff = ti->position - tj->position;
-                    float d2 = diff.x*diff.x + diff.z*diff.z;
-                    if (d2 < 1.0f && d2 > 0.0001f) {
-                        float push = (1.0f - std::sqrt(d2)) * 0.5f * dt * 6.0f;
-                        Vec3 n = normalize(Vec3{diff.x, 0.0f, diff.z});
-                        ti->position.x += n.x * push;
-                        ti->position.z += n.z * push;
-                        tj->position.x -= n.x * push;
-                        tj->position.z -= n.z * push;
+            // Mob-mob separation pass (keeps mobs from stacking).
+            // Runs on a fixed timer instead of every frame — O(n²) is too expensive
+            // at 60 Hz when many mobs are present. 80 ms cadence is imperceptible.
+            static float sepTimer = 0.0f;
+            sepTimer += dt;
+            if (sepTimer >= 0.08f && mobPool->components.size() > 1) {
+                sepTimer = 0.0f;
+                // Spatial grid: bucket by cell of size 2 so we only compare mobs
+                // that are within the 1-block separation radius. Reduces O(n²) to O(n)
+                // for the typical sparse case.
+                const float kCell = 2.0f;
+                struct CellKey { int cx, cz; bool operator==(const CellKey& o) const { return cx==o.cx && cz==o.cz; } };
+                struct CellHash { size_t operator()(const CellKey& k) const {
+                    return std::hash<int>()(k.cx) ^ (std::hash<int>()(k.cz) * 2654435761u);
+                }};
+                std::unordered_map<CellKey, std::vector<size_t>, CellHash> grid;
+                for (size_t i = 0; i < mobPool->components.size(); ++i) {
+                    Transform* t = registry.getComponent<Transform>(mobPool->indexToEntity[i]);
+                    if (!t) continue;
+                    CellKey ck{ (int)std::floor(t->position.x / kCell), (int)std::floor(t->position.z / kCell) };
+                    grid[ck].push_back(i);
+                }
+                for (auto& [ck, cellA] : grid) {
+                    for (int dcx = -1; dcx <= 1; ++dcx) {
+                        for (int dcz = -1; dcz <= 1; ++dcz) {
+                            CellKey nb{ ck.cx + dcx, ck.cz + dcz };
+                            auto it = grid.find(nb);
+                            if (it == grid.end()) continue;
+                            const auto& cellB = it->second;
+                            for (size_t ii : cellA) {
+                                for (size_t jj : cellB) {
+                                    if (jj <= ii) continue; // avoid double-processing
+                                    Transform* ti = registry.getComponent<Transform>(mobPool->indexToEntity[ii]);
+                                    Transform* tj = registry.getComponent<Transform>(mobPool->indexToEntity[jj]);
+                                    if (!ti || !tj) continue;
+                                    Vec3 diff = ti->position - tj->position;
+                                    float d2 = diff.x*diff.x + diff.z*diff.z;
+                                    if (d2 < 1.0f && d2 > 0.0001f) {
+                                        float push = (1.0f - std::sqrt(d2)) * 0.5f * 0.08f * 6.0f;
+                                        Vec3 n = normalize(Vec3{diff.x, 0.0f, diff.z});
+                                        ti->position.x += n.x * push;
+                                        ti->position.z += n.z * push;
+                                        tj->position.x -= n.x * push;
+                                        tj->position.z -= n.z * push;
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -2568,7 +3480,7 @@ int main() {
                 MobAI::update(mob, *transform, world, dt, camera.position());
 
                 // Hostile mob melee damage to player
-                if (mob.state == Mob::ATTACK && mob.attackCooldown <= 0.0f && playerInvincTimer <= 0.0f) {
+                if (!isCreativeMode && mob.state == Mob::ATTACK && mob.attackCooldown <= 0.0f && playerInvincTimer <= 0.0f) {
                     float distSq = (transform->position.x - camera.position().x) * (transform->position.x - camera.position().x)
                                  + (transform->position.z - camera.position().z) * (transform->position.z - camera.position().z);
                     if (distSq < 2.5f * 2.5f) {
@@ -2806,13 +3718,9 @@ int main() {
             viewportBuffer.resolve();
         }
 
-        // Chat UI
-        if (glfwGetKey(renderer.getWindow(), GLFW_KEY_T) == GLFW_PRESS && !chatOpen) {
-            chatOpen = true;
-            menuMode = true;
-        }
-
-        if (glfwGetKey(renderer.getWindow(), GLFW_KEY_ESCAPE) == GLFW_PRESS && !showEscMenu) {
+        // Chat UI — ESC opens the pause menu only when in-world and not already in another dialog
+        if (glfwGetKey(renderer.getWindow(), GLFW_KEY_ESCAPE) == GLFW_PRESS
+            && !showEscMenu && !inMainMenu && !showExitConfirm) {
             showEscMenu = true;
             menuMode = true;
         }
@@ -2822,7 +3730,53 @@ int main() {
             showSettings = !showSettings;
 
         if (chatOpen) {
-            // ... (keep chat UI)
+            // ── Chat / Command bar ────────────────────────────────────────────
+            // Thin floating input strip pinned to bottom-left of the viewport.
+            // Enter  — submit (currently a no-op placeholder for future commands)
+            // Escape — close without submitting
+            ImGuiViewport* vp = ImGui::GetMainViewport();
+            const float barW = std::min(480.0f, vp->WorkSize.x * 0.50f);
+            const float barH = 34.0f;
+            ImGui::SetNextWindowPos(
+                ImVec2(vp->WorkPos.x + 10.0f,
+                       vp->WorkPos.y + vp->WorkSize.y - barH - 10.0f));
+            ImGui::SetNextWindowSize(ImVec2(barW, barH));
+            ImGui::SetNextWindowBgAlpha(0.82f);
+            ImGuiWindowFlags chatFlags =
+                ImGuiWindowFlags_NoDecoration       |
+                ImGuiWindowFlags_NoMove             |
+                ImGuiWindowFlags_NoSavedSettings    |
+                ImGuiWindowFlags_NoBringToFrontOnFocus;
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8.0f, 4.0f));
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 4.0f);
+            if (ImGui::Begin("##chat", nullptr, chatFlags)) {
+                ImGui::SetNextItemWidth(barW - 20.0f);
+                // Auto-focus the text field when the window first opens.
+                static bool s_chatFocused = false;
+                if (!s_chatFocused) {
+                    ImGui::SetKeyboardFocusHere();
+                    s_chatFocused = true;
+                }
+                bool submit = ImGui::InputText(
+                    "##chatinput", chatInput, sizeof(chatInput),
+                    ImGuiInputTextFlags_EnterReturnsTrue);
+                if (submit) {
+                    // Command submitted — clear input and close bar.
+                    // Future: parse chatInput as a console command here.
+                    chatInput[0] = '\0';
+                    chatOpen      = false;
+                    menuMode      = false;
+                    s_chatFocused = false;
+                }
+                if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+                    chatInput[0]  = '\0';
+                    chatOpen      = false;
+                    menuMode      = false;
+                    s_chatFocused = false;
+                }
+            }
+            ImGui::End();
+            ImGui::PopStyleVar(2);
         }
 
         // In-game pause / game menu (ESC)
@@ -2899,8 +3853,303 @@ int main() {
                     showEscMenu = false;
                     menuMode    = false;
                 }
+                ImGui::Spacing();
+                // ── Return to Main Menu ──────────────────────────────────────
+                ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.18f, 0.30f, 0.60f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.42f, 0.82f, 1.0f));
+                if (ImGui::Button("Return to Main Menu", ImVec2(-1, 0))) {
+                    // ── Auto-save world (always — even if it was never saved before) ──
+                    {
+                        // Build a filesystem path for worlds that don't have one yet
+                        if (loadedWorldFile.empty()) {
+                            std::string safeN;
+                            for (const char* p = worldSaveName; *p; ++p)
+                                safeN += (std::isalnum((unsigned char)*p)
+                                          || *p == ' ' || *p == '_' || *p == '-') ? *p : '_';
+                            if (safeN.empty()) safeN = "World";
+                            // Ensure we don't overwrite an existing file
+                            std::string base = safeN; int idx = 2;
+                            while (std::filesystem::exists("saves/" + safeN + ".vsa"))
+                                safeN = base + " " + std::to_string(idx++);
+                            loadedWorldFile = "saves/" + safeN + ".vsa";
+                        }
+                        WorldMetadata saveMeta;
+                        std::strncpy(saveMeta.name, worldSaveName, sizeof(saveMeta.name) - 1);
+                        saveMeta.name[sizeof(saveMeta.name) - 1] = '\0';
+                        saveMeta.seed         = worldSeed;
+                        saveMeta.frequency    = worldFrequency;
+                        saveMeta.baseHeight   = worldBaseHeight;
+                        saveMeta.worldTime    = worldTime;
+                        Vec3 csp              = camera.position();
+                        saveMeta.playerX      = csp.x;
+                        saveMeta.playerY      = csp.y;
+                        saveMeta.playerZ      = csp.z;
+                        saveMeta.playerYaw    = camera.yawDegrees();
+                        saveMeta.playerPitch  = camera.pitchDegrees();
+                        saveMeta.gameMode     = isCreativeMode ? 0 : 1;
+                        saveMeta.playerLevel  = playerLevel;
+                        saveMeta.blocksPlaced = statBlocksPlaced;
+                        world.save(loadedWorldFile, saveMeta);
+                    }
+                    // ── Fully unload world: free all chunk memory and fluid state ──
+                    world.clear();
+                    fluidSim.clear();
+                    snowParticles.clear();
+                    lavaParticles.clear();
+                    // ── Reset per-session gameplay state ──────────────────────────
+                    playerHp           = 20.0f;
+                    playerOxygen       = 20.0f;
+                    playerOnFireSeconds= 0.0f;
+                    playerHunger       = 20.0f;
+                    playerSaturation   = 5.0f;
+                    playerExhaustion   = 0.0f;
+                    fallDistance       = 0.0f;
+                    playerDeathTimer   = 0.0f;
+                    playerHurtTimer    = 0.0f;
+                    playerInvincTimer  = 0.0f;
+                    loadedWorldFile.clear();
+                    // ── Return to main menu ───────────────────────────────────────
+                    showEscMenu      = false;
+                    inMainMenu       = true;
+                    menuMode         = true;
+                    worldInitialized = false;
+                    startMenuSaves   = World::listSaves("saves");
+                    gui.setWorldName("");   // clear name from navbar when in main menu
+                }
+                ImGui::PopStyleColor(2);
+                ImGui::Spacing();
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.55f, 0.18f, 0.18f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.75f, 0.24f, 0.24f, 1.0f));
+                if (ImGui::Button("Save & Exit", ImVec2(-1, 0))) {
+                    showEscMenu = false;
+                    std::strncpy(exitWorldName, worldSaveName, sizeof(exitWorldName) - 1);
+                    exitWorldName[sizeof(exitWorldName) - 1] = '\0';
+                    showExitConfirm = true;
+                }
+                ImGui::PopStyleColor(2);
             }
             ImGui::End();
+        }
+
+        // ── Start Menu: New World modal ───────────────────────────────────────────
+        if (showNewWorldDialog) {
+            ImGui::OpenPopup("Create New World##modal");
+            showNewWorldDialog = false;
+        }
+        ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(),
+            ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+        ImGui::SetNextWindowSize(ImVec2(440, 0), ImGuiCond_Appearing);
+        if (ImGui::BeginPopupModal("Create New World##modal", nullptr,
+                ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::Spacing();
+            ImGui::SetNextItemWidth(300.f);
+            ImGui::InputText("World Name", newWorldName, sizeof(newWorldName));
+            ImGui::SetNextItemWidth(300.f);
+            ImGui::InputText("Seed  (blank = random)", newWorldSeedStr, sizeof(newWorldSeedStr));
+            ImGui::Spacing();
+            ImGui::SeparatorText("Game Mode");
+            ImGui::RadioButton("Creative  (fly, no damage, no hunger)", &newWorldGameMode, 0);
+            ImGui::RadioButton("Survival  (fall damage, hunger, no fly)", &newWorldGameMode, 1);
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::Spacing();
+            float bwNW = 130.0f;
+            if (ImGui::Button("Create World", ImVec2(bwNW, 0))) {
+                int chosenSeed = 1337;
+                if (std::strlen(newWorldSeedStr) > 0) {
+                    char* endp = nullptr;
+                    long v = std::strtol(newWorldSeedStr, &endp, 10);
+                    if (endp != newWorldSeedStr)
+                        chosenSeed = (int)v;
+                    else {
+                        std::hash<std::string> hasher;
+                        chosenSeed = (int)(hasher(std::string(newWorldSeedStr)) & 0x7FFFFFFF);
+                    }
+                } else {
+                    std::random_device rd;
+                    chosenSeed = (int)(rd() & 0x7FFFFFFF);
+                }
+                worldSeed = chosenSeed;
+                noise.SetSeed(worldSeed);
+                biomeNoise.SetSeed(worldSeed + 20);
+                continentalNoise.SetSeed(worldSeed + 10);
+                mountainNoise.SetSeed(worldSeed + 1);
+                infernalNoise.SetSeed(worldSeed + 95);
+                world.clear(); fluidSim.clear(); loadedWorldFile.clear();
+                // Use the typed name but guarantee it doesn't overwrite an existing save
+                std::string resolvedName = uniqueWorldName(newWorldName);
+                std::strncpy(worldSaveName, resolvedName.c_str(), sizeof(worldSaveName)-1);
+                worldSaveName[sizeof(worldSaveName)-1] = '\0';
+                std::strncpy(exitWorldName,  resolvedName.c_str(), sizeof(exitWorldName)-1);
+                exitWorldName[sizeof(exitWorldName)-1] = '\0';
+                camera.setPosition({0.0f, (float)(worldBaseHeight + 20), 0.0f});
+                spawnPosition = {0.0f, (float)(worldBaseHeight + 20), 0.0f};
+                isCreativeMode   = (newWorldGameMode == 0);
+                playerHunger     = 20.0f; playerSaturation = 5.0f; playerExhaustion = 0.0f;
+                playerHp         = 20.0f; fallDistance = 0.0f; playerOxygen = 20.0f;
+                playerLevel = 1; playerXP = 0.0f; statBlocksPlaced = 0; statBlocksMined = 0;
+                worldInitialized = true; inMainMenu = false; menuMode = false;
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::SameLine(0.0f, 10.0f);
+            if (ImGui::Button("Cancel", ImVec2(bwNW, 0)))
+                ImGui::CloseCurrentPopup();
+            ImGui::EndPopup();
+        }
+
+        // ── Start Menu: Load World modal ───────────────────────────────────────────
+        if (showLoadWorldDialog) {
+            ImGui::OpenPopup("Load World##modal");
+            showLoadWorldDialog = false;
+        }
+        ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(),
+            ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+        ImGui::SetNextWindowSize(ImVec2(500, 420), ImGuiCond_Appearing);
+        if (ImGui::BeginPopupModal("Load World##modal", nullptr,
+                ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize)) {
+            ImGui::SeparatorText("Saved Worlds");
+
+            // Helper lambda: queue a world load for execution at next frame start
+            auto applyLoad = [&](const WorldSaveInfo& sv) {
+                pendingLoadFile = sv.filename;
+                ImGui::CloseCurrentPopup();
+            };
+
+            if (startMenuSaves.empty()) {
+                ImGui::TextColored(ImVec4(0.55f, 0.55f, 0.55f, 1.0f),
+                    "No saved worlds found in saves/ folder.");
+                ImGui::Spacing();
+                ImGui::TextColored(ImVec4(0.45f, 0.45f, 0.45f, 1.0f),
+                    "Create a world first, then save it from the World Editor.");
+            } else {
+                ImGui::BeginChild("LWScroll", ImVec2(0, 290), true,
+                    ImGuiWindowFlags_AlwaysVerticalScrollbar);
+                for (int i = 0; i < (int)startMenuSaves.size(); ++i) {
+                    const auto& sv = startMenuSaves[i];
+                    bool sel = (startMenuSelectedSave == i);
+
+                    // Row background highlight
+                    ImVec2 rowMin = ImGui::GetCursorScreenPos();
+                    float rowH   = ImGui::GetTextLineHeightWithSpacing() * 2.2f;
+                    ImVec2 rowMax(rowMin.x + ImGui::GetContentRegionAvail().x, rowMin.y + rowH);
+                    if (sel)
+                        ImGui::GetWindowDrawList()->AddRectFilled(rowMin, rowMax,
+                            IM_COL32(40, 80, 55, 200), 4.f);
+                    else if (ImGui::IsMouseHoveringRect(rowMin, rowMax))
+                        ImGui::GetWindowDrawList()->AddRectFilled(rowMin, rowMax,
+                            IM_COL32(30, 55, 40, 160), 4.f);
+
+                    ImGui::PushID(i);
+                    if (ImGui::Selectable("##lw", sel,
+                            ImGuiSelectableFlags_AllowDoubleClick |
+                            ImGuiSelectableFlags_SpanAllColumns,
+                            ImVec2(0, rowH - 2))) {
+                        startMenuSelectedSave = i;
+                        if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+                            applyLoad(sv);
+                        }
+                    }
+                    ImGui::PopID();
+                    // Draw two-line info over the selectable
+                    ImDrawList* ldl = ImGui::GetWindowDrawList();
+                    ldl->AddText(ImVec2(rowMin.x + 8, rowMin.y + 4),
+                        IM_COL32(235, 235, 235, 255), sv.displayName.c_str());
+                    char info[96];
+                    snprintf(info, sizeof(info), "Seed: %d   |   Chunks: %zu",
+                        sv.metadata.seed, sv.chunkCount);
+                    ldl->AddText(ImVec2(rowMin.x + 8, rowMin.y + 4 + ImGui::GetTextLineHeight() + 2),
+                        IM_COL32(145, 175, 155, 220), info);
+                }
+                ImGui::EndChild();
+            }
+
+            ImGui::Spacing();
+            float bwLW = 130.0f;
+            bool canLoad = startMenuSelectedSave >= 0 && startMenuSelectedSave < (int)startMenuSaves.size();
+            if (!canLoad) ImGui::BeginDisabled();
+            if (ImGui::Button("Load Selected", ImVec2(bwLW, 0))) {
+                const auto& sv = startMenuSaves[startMenuSelectedSave];
+                applyLoad(sv);
+            }
+            if (!canLoad) ImGui::EndDisabled();
+            ImGui::SameLine(0.0f, 10.0f);
+            if (ImGui::Button("Refresh", ImVec2(bwLW, 0))) {
+                startMenuSaves = World::listSaves("saves");
+                startMenuSelectedSave = -1;
+            }
+            ImGui::SameLine(0.0f, 10.0f);
+            if (ImGui::Button("Cancel", ImVec2(bwLW, 0)))
+                ImGui::CloseCurrentPopup();
+            ImGui::EndPopup();
+        }
+
+        // ── Exit Confirmation Modal (must be inside the ImGui frame) ──────────
+        if (showExitConfirm) {
+            ImGui::OpenPopup("Exit##confirm");
+            showExitConfirm = false;
+        }
+        // Centre the modal on the main viewport
+        ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(),
+            ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+        ImGui::SetNextWindowSize(ImVec2(420, 0), ImGuiCond_Appearing);
+        if (ImGui::BeginPopupModal("Exit##confirm", nullptr,
+                ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::Spacing();
+            ImGui::TextWrapped("Save this world before exiting?");
+            ImGui::Spacing();
+            ImGui::SetNextItemWidth(300.0f);
+            ImGui::InputText("World Name", exitWorldName, sizeof(exitWorldName));
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::Spacing();
+            float bw = 115.0f;
+            if (ImGui::Button("Save & Exit", ImVec2(bw, 0))) {
+                std::string safeName;
+                for (const char* p = exitWorldName; *p; ++p) {
+                    char c = *p;
+                    if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                        (c >= '0' && c <= '9') || c == '_' || c == '-' || c == ' ')
+                        safeName += c;
+                }
+                if (safeName.empty()) safeName = "Unnamed";
+                WorldMetadata meta;
+                std::strncpy(meta.name, exitWorldName, sizeof(meta.name) - 1);
+                meta.name[sizeof(meta.name)-1] = '\0';
+                meta.seed       = worldSeed;
+                meta.frequency  = worldFrequency;
+                meta.baseHeight = worldBaseHeight;
+                meta.worldTime  = worldTime;
+                Vec3 cp = camera.position();
+                meta.playerX = cp.x; meta.playerY = cp.y; meta.playerZ = cp.z;
+                meta.playerYaw    = camera.yawDegrees();
+                meta.playerPitch  = camera.pitchDegrees();
+                meta.gameMode     = isCreativeMode ? 0 : 1;
+                meta.playerLevel  = playerLevel;
+                meta.blocksPlaced = statBlocksPlaced;
+                std::string savePath = "saves/" + safeName + ".vsa";
+                world.save(savePath, meta);
+                loadedWorldFile = savePath;
+                { std::ofstream scf("session.cfg"); scf << savePath << "\n"; }
+                ImGui::CloseCurrentPopup();
+                glfwSetWindowShouldClose(renderer.getWindow(), true);
+            }
+            ImGui::SameLine(0.0f, 8.0f);
+            if (ImGui::Button("Don't Save", ImVec2(bw, 0))) {
+                // Discard any in-session chunk changes:
+                // - For a loaded world: restore cache from the last proper save so
+                //   modifications made this session are wiped from the cache files.
+                // - For a brand-new (never-saved) world: wipe the temporary cache.
+                if (!loadedWorldFile.empty())
+                    world.restoreCacheFromSave(loadedWorldFile);
+                else
+                    world.clearCacheDir();
+                ImGui::CloseCurrentPopup();
+                glfwSetWindowShouldClose(renderer.getWindow(), true);
+            }
+            ImGui::SameLine(0.0f, 8.0f);
+            if (ImGui::Button("Cancel", ImVec2(bw, 0)))
+                ImGui::CloseCurrentPopup();
+            ImGui::EndPopup();
         }
 
         gui.endFrame();

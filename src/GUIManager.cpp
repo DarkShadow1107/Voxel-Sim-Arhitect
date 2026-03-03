@@ -273,9 +273,9 @@ void GUIManager::applyTheme() {
 
 void GUIManager::showMainMenuBar(bool& showProfiler, bool& showMemory, bool& showECS, bool& showWorldEditor, bool& showSettings, bool& showSoundEditor, bool& showBlockDesigner, bool& showMobDesigner, bool& showInteractionEditor, bool& showToolDesigner, bool& showWeatherDesigner, bool& showSoundDesigner, bool& showAdvWorldEditor, bool& showTextureDesigner) {
 
-    // ── Taller, more spacious bar ────────────────────────────────────────────
-    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,  ImVec2(12.0f, 11.0f));
-    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,   ImVec2(10.0f, 8.0f));
+    // ── Taller, more refined bar ───────────────────────────────────────────────
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,  ImVec2(8.0f, 11.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,   ImVec2(10.0f, 4.0f));
     ImGui::PushStyleColor(ImGuiCol_MenuBarBg,        ImVec4(0.051f, 0.051f, 0.067f, 1.00f)); // match applyTheme
     ImGui::PushStyleColor(ImGuiCol_PopupBg,          ImVec4(0.075f, 0.075f, 0.090f, 0.98f));
     ImGui::PushStyleColor(ImGuiCol_HeaderHovered,    ImVec4(0.357f, 0.608f, 0.835f, 0.35f)); // accent hover
@@ -290,98 +290,126 @@ void GUIManager::showMainMenuBar(bool& showProfiler, bool& showMemory, bool& sho
     if (!barOpen)
         return;
 
-    // ── Bottom accent line (matches new theme accent #5B9BD5) ───────────────
+    // ── Mode-tinted accent strip (bottom of menu bar) ─────────────────────
     {
         ImDrawList* dl = ImGui::GetWindowDrawList();
         ImVec2 p = ImGui::GetWindowPos();
         float w  = ImGui::GetWindowWidth();
         float h  = ImGui::GetWindowHeight();
-        // Full-width gradient bar: fade from accent-dim on left to accent on right
+        // Colour palette: blue = Creative, amber = Survival
+        const bool  crtv = m_isCreativeMode;
+        const ImU32 cEdge = crtv ? IM_COL32(30,  65, 120, 70)  : IM_COL32(110, 70, 10, 70);
+        const ImU32 cPeak = crtv ? IM_COL32(91, 155, 213, 175) : IM_COL32(230,150, 30, 175);
+        // 3-px bar: fade in from left → peak at centre → fade out to right
         dl->AddRectFilledMultiColor(
-            ImVec2(p.x, p.y + h - 2.0f), ImVec2(p.x + w, p.y + h),
-            IM_COL32(58, 106, 158, 100), IM_COL32(91, 155, 213, 140),
-            IM_COL32(91, 155, 213, 140), IM_COL32(58, 106, 158, 100));
+            ImVec2(p.x,         p.y + h - 3.0f),
+            ImVec2(p.x + w*0.5f, p.y + h),
+            cEdge, cPeak, cPeak, cEdge);
+        dl->AddRectFilledMultiColor(
+            ImVec2(p.x + w*0.5f, p.y + h - 3.0f),
+            ImVec2(p.x + w,      p.y + h),
+            cPeak, cEdge, cEdge, cPeak);
+        // 1-px specular highlight at very top of bar for depth
+        dl->AddLine(ImVec2(p.x, p.y + 1.0f), ImVec2(p.x + w, p.y + 1.0f),
+                    IM_COL32(255, 255, 255, 9), 1.0f);
     }
 
-    // ── Left brand badge ─────────────────────────────────────────────────────
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.478f, 0.722f, 0.941f, 1.00f)); // accentHi
-    ImGui::TextUnformatted("VSA");
-    ImGui::PopStyleColor();
-    ImGui::SameLine(0.0f, 10.0f);
+    // ── Left brand badge — filled pill ───────────────────────────────────────
+    {
+        const char* brandText = "VSA";
+        ImVec2 textSz  = ImGui::CalcTextSize(brandText);
+        const float pH = 6.0f, pW = 13.0f;  // pill inner padding
+        // Grab cursor in screen space before we draw
+        ImVec2 origin  = ImGui::GetCursorScreenPos();
+        float  pillY   = origin.y + (ImGui::GetFrameHeight() - textSz.y - pH * 2.0f) * 0.5f;
+        ImVec2 pillMin(origin.x, pillY);
+        ImVec2 pillMax(pillMin.x + textSz.x + pW * 2.0f, pillMin.y + textSz.y + pH * 2.0f);
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        // Filled pill — gradient (top half lighter)
+        ImVec2 pillMid(pillMin.x, (pillMin.y + pillMax.y) * 0.5f);
+        dl->AddRectFilledMultiColor(pillMin, ImVec2(pillMax.x, pillMid.y),
+            IM_COL32(52, 98, 158, 220), IM_COL32(52, 98, 158, 220),
+            IM_COL32(38, 78, 128, 210), IM_COL32(38, 78, 128, 210));
+        dl->AddRectFilled(ImVec2(pillMin.x, pillMid.y), pillMax, IM_COL32(38, 78, 128, 210), 0.0f);
+        // Round corners on top half too
+        dl->AddRectFilled(pillMin, pillMax, IM_COL32(0,0,0,0), 7.0f);
+        dl->AddRectFilled(pillMin, pillMax, IM_COL32(38, 78, 128, 210), 7.0f);
+        // Accent border ring
+        dl->AddRect(pillMin, pillMax, IM_COL32(91, 155, 213, 160), 7.0f, 0, 1.2f);
+        // Text on top
+        dl->AddText(ImVec2(pillMin.x + pW, pillMin.y + pH),
+                    IM_COL32(200, 228, 255, 255), brandText);
+        // Claim the layout space so SameLine knows where we ended
+        ImGui::Dummy(ImVec2(textSz.x + pW * 2.0f, ImGui::GetFrameHeight()));
+    }
+    ImGui::SameLine(0.0f, 14.0f);
 
     // ── Thin vertical separator ───────────────────────────────────────────────
     {
-        float sepH = ImGui::GetFrameHeight() * 0.60f;
+        float sepH = ImGui::GetFrameHeight() * 0.65f;
         float cy   = ImGui::GetCursorScreenPos().y + (ImGui::GetFrameHeight() - sepH) * 0.5f;
         float cx   = ImGui::GetCursorScreenPos().x;
         ImGui::GetWindowDrawList()->AddLine(
             ImVec2(cx, cy), ImVec2(cx, cy + sepH),
             IM_COL32(80, 100, 140, 140), 1.0f);
-        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 10.0f);
+        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 12.0f);
     }
 
     // ── File ─────────────────────────────────────────────────────────────────
     if (ImGui::BeginMenu("File")) {
-        ImGui::SeparatorText("World");
-        if (ImGui::MenuItem("New World",  "Ctrl+N")) { showWorldEditor = true; }
-        if (ImGui::MenuItem("Open World", "Ctrl+O")) { showWorldEditor = true; }
         if (ImGui::MenuItem("Save World", "Ctrl+S")) { /* hooked in main loop */ }
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+            ImGui::SetTooltip("Save the current world to disk");
         ImGui::Separator();
-        if (ImGui::MenuItem("Exit", "Esc"))
+        if (ImGui::MenuItem("Preferences", "Ctrl+P")) { showSettings = true; }
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+            ImGui::SetTooltip("Display, graphics and control settings");
+        ImGui::Separator();
+        if (ImGui::MenuItem("Exit", "Alt+F4"))
             glfwSetWindowShouldClose(m_window, true);
         ImGui::EndMenu();
     }
 
-    // thin separator
-    {
-        float sepH = ImGui::GetFrameHeight() * 0.50f;
-        float cy   = ImGui::GetCursorScreenPos().y + (ImGui::GetFrameHeight() - sepH) * 0.5f;
-        float cx   = ImGui::GetCursorScreenPos().x - 2.0f;
-        ImGui::GetWindowDrawList()->AddLine(
-            ImVec2(cx, cy), ImVec2(cx, cy + sepH),
-            IM_COL32(60, 80, 110, 100), 1.0f);
-    }
-
     // ── World ──────────────────────────────────────────────────────────────────
     if (ImGui::BeginMenu("World")) {
-        ImGui::SeparatorText("Generation");
-        ImGui::MenuItem("World Editor",          "Ctrl+W", &showWorldEditor);
+        ImGui::SeparatorText("Terrain");
+        ImGui::MenuItem("World Editor", "Ctrl+W", &showWorldEditor);
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
-            ImGui::SetTooltip("Configure terrain generation settings and regenerate the world");
-        ImGui::MenuItem("Advanced World Editor", nullptr,  &showAdvWorldEditor);
+            ImGui::SetTooltip("New world, save/load, seed and terrain settings");
+        ImGui::MenuItem("Advanced Editor", nullptr, &showAdvWorldEditor);
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
             ImGui::SetTooltip("Fine-tune biomes, erosion, ore distribution and structures");
         ImGui::EndMenu();
     }
 
-    // ── Design ────────────────────────────────────────────────────────────────
-    if (ImGui::BeginMenu("Design")) {
-        ImGui::SeparatorText("Content");
+    // ── Create ────────────────────────────────────────────────────────────────
+    if (ImGui::BeginMenu("Create")) {
+        ImGui::SeparatorText("Blocks & Mobs");
         ImGui::MenuItem("Block Designer",   "B", &showBlockDesigner);
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
             ImGui::SetTooltip("Create and edit custom block types, textures and properties");
         ImGui::MenuItem("Mob Designer",     "M", &showMobDesigner);
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
-            ImGui::SetTooltip("Build mob meshes, animations and behavior trees");
+            ImGui::SetTooltip("Build mob meshes, animations and behaviour trees");
         ImGui::MenuItem("Tool Designer",    nullptr, &showToolDesigner);
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
-            ImGui::SetTooltip("Define tools, their stats, and breaking properties");
+            ImGui::SetTooltip("Define tools, their stats and breaking properties");
         ImGui::MenuItem("Texture Designer", nullptr, &showTextureDesigner);
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
             ImGui::SetTooltip("Paint and manage block / mob texture atlases");
         ImGui::SeparatorText("Environment");
         ImGui::MenuItem("Weather Designer", nullptr, &showWeatherDesigner);
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
-            ImGui::SetTooltip("Control precipitation, wind and ambient effects");
+            ImGui::SetTooltip("Control precipitation, wind and ambient particle effects");
         ImGui::MenuItem("Sound Designer",   nullptr, &showSoundDesigner);
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
             ImGui::SetTooltip("Compose and layer ambient and block sounds");
         ImGui::EndMenu();
     }
 
-    // ── Gameplay ──────────────────────────────────────────────────────────────
-    if (ImGui::BeginMenu("Gameplay")) {
-        ImGui::SeparatorText("Editors");
+    // ── Engine ────────────────────────────────────────────────────────────────
+    if (ImGui::BeginMenu("Engine")) {
+        ImGui::SeparatorText("Gameplay");
         ImGui::MenuItem("Game Engine Editor", "G", &showInteractionEditor);
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
             ImGui::SetTooltip("Block mechanics, tool system, mob AI and control bindings");
@@ -391,8 +419,8 @@ void GUIManager::showMainMenuBar(bool& showProfiler, bool& showMemory, bool& sho
         ImGui::EndMenu();
     }
 
-    // ── View ──────────────────────────────────────────────────────────────────
-    if (ImGui::BeginMenu("View")) {
+    // ── Debug ─────────────────────────────────────────────────────────────────
+    if (ImGui::BeginMenu("Debug")) {
         ImGui::SeparatorText("Diagnostics");
         ImGui::MenuItem("Profiler",         "F2", &showProfiler);
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
@@ -406,168 +434,236 @@ void GUIManager::showMainMenuBar(bool& showProfiler, bool& showMemory, bool& sho
         ImGui::EndMenu();
     }
 
-    // ── Settings ──────────────────────────────────────────────────────────────
-    if (ImGui::BeginMenu("Settings")) {
-        ImGui::SeparatorText("Application");
-        if (ImGui::MenuItem("Preferences", "Ctrl+P", nullptr, true)) { showSettings = true; }
-        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
-            ImGui::SetTooltip("Display, graphics and control settings");
-        ImGui::EndMenu();
-    }
-
     // ── Help ──────────────────────────────────────────────────────────────────
     if (ImGui::BeginMenu("Help")) {
-        if (ImGui::MenuItem("Open Help & Reference Window..."))
+        if (ImGui::MenuItem("Open Help & Reference..."))
             m_helperWindow.open();
-
         ImGui::Separator();
-
-        // Quick-reference: most-used controls (full detail in HelperWindow)
-        ImGui::SeparatorText("Quick Reference");
-        ImGui::TextDisabled("W A S D / Arrows"); ImGui::SameLine(180); ImGui::TextDisabled("Move");
-        ImGui::TextDisabled("Space");            ImGui::SameLine(180); ImGui::TextDisabled("Jump / Fly Up");
-        ImGui::TextDisabled("Dbl Space");        ImGui::SameLine(180); ImGui::TextDisabled("Toggle Fly");
-        ImGui::TextDisabled("LMB");              ImGui::SameLine(180); ImGui::TextDisabled("Break Block");
-        ImGui::TextDisabled("RMB");              ImGui::SameLine(180); ImGui::TextDisabled("Place Block");
-        ImGui::TextDisabled("E");                ImGui::SameLine(180); ImGui::TextDisabled("Inventory");
-        ImGui::TextDisabled("F10");              ImGui::SameLine(180); ImGui::TextDisabled("Toggle Menu/World");
-        ImGui::TextDisabled("Ctrl+P");           ImGui::SameLine(180); ImGui::TextDisabled("Preferences");
-        ImGui::TextDisabled("Esc");              ImGui::SameLine(180); ImGui::TextDisabled("Game Menu");
-
+        ImGui::SeparatorText("Quick Controls");
+        ImGui::TextDisabled("W A S D / Arrows"); ImGui::SameLine(190); ImGui::TextDisabled("Move");
+        ImGui::TextDisabled("Space");            ImGui::SameLine(190); ImGui::TextDisabled("Jump / Fly Up");
+        ImGui::TextDisabled("Dbl Space");        ImGui::SameLine(190); ImGui::TextDisabled("Toggle Fly");
+        ImGui::TextDisabled("LMB / RMB");        ImGui::SameLine(190); ImGui::TextDisabled("Break / Place Block");
+        ImGui::TextDisabled("E");                ImGui::SameLine(190); ImGui::TextDisabled("Inventory");
+        ImGui::TextDisabled("F10");              ImGui::SameLine(190); ImGui::TextDisabled("Toggle Menu / World");
+        ImGui::TextDisabled("Esc");              ImGui::SameLine(190); ImGui::TextDisabled("Game Menu");
         ImGui::Separator();
         ImGui::TextDisabled("Voxel-Sim Architect  V0.6 Beta");
         ImGui::TextDisabled("Build: " __DATE__ "  " __TIME__);
         ImGui::EndMenu();
     }
 
-    // ── Quick-Launch Toolbar ──────────────────────────────────────────────────
-    //
-    // Buttons are split into four colour-coded groups separated by hairlines:
-    //   WORLD  (blue)    — World editor
-    //   DESIGN (violet)  — Blocks, Mobs, Textures, Tools, Weather
-    //   ENGINE (amber)   — Game Engine, Sound
-    //   VIEW   (green)   — Profiler
-    //
-    // Active state: filled accent colour + bright label.
-    // Inactive state: near-invisible, slightly tinted by category.
-    // ──────────────────────────────────────────────────────────────────────────
+    // ══════════════════════════════════════════════════════════════════════════
+    // Redesigned Quick-Launch Toolbar — 5 colour-coded groups, fully labelled.
+    // Groups: WORLD | DESIGN | ENVIRON | ENGINE | DEBUG+SETTINGS
+    // Each group has a small dim category label followed by pill buttons.
+    // Groups are divided by thicker tinted separators for clear visual zones.
+    // ══════════════════════════════════════════════════════════════════════════
     {
-        // Leading separator after menu items
-        ImGui::SameLine(0.0f, 12.0f);
-        auto drawBarSep = [&]() {
-            float sepH = ImGui::GetFrameHeight() * 0.55f;
+        ImGui::SameLine(0.0f, 16.0f);
+
+        const float kBtnH      = ImGui::GetFrameHeight() * 0.80f;
+        const float kSepMargin = 10.0f;
+
+        // Thicker, colour-tinted separator between groups
+        auto drawGroupSep = [&](ImU32 col) {
+            float sepH = ImGui::GetFrameHeight() * 0.70f;
             float cy   = ImGui::GetCursorScreenPos().y + (ImGui::GetFrameHeight() - sepH) * 0.5f;
-            float cx   = ImGui::GetCursorScreenPos().x;
+            float cx   = ImGui::GetCursorScreenPos().x + kSepMargin * 0.5f;
             ImGui::GetWindowDrawList()->AddLine(
-                ImVec2(cx, cy), ImVec2(cx, cy + sepH),
-                IM_COL32(70, 85, 115, 120), 1.0f);
-            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 10.0f);
+                ImVec2(cx, cy), ImVec2(cx, cy + sepH), col, 2.0f);
+            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + kSepMargin);
         };
-        drawBarSep();
 
-        const float kBtnH = ImGui::GetFrameHeight() * 0.74f;
+        // Small group label rendered inline before the buttons of each group
+        auto drawGroupLabel = [&](const char* txt, ImU32 col) {
+            ImVec2 cp   = ImGui::GetCursorScreenPos();
+            float  barH = ImGui::GetFrameHeight();
+            float  ty   = cp.y + barH - ImGui::GetTextLineHeightWithSpacing() * 1.30f;
+            ImGui::GetWindowDrawList()->AddText(ImVec2(cp.x, ty), col, txt);
+            ImGui::SetCursorPosX(ImGui::GetCursorPosX() +
+                                 ImGui::CalcTextSize(txt).x + 4.0f);
+        };
 
-        // Category-tinted quick-launch button helper.
-        //   r/g/b  = category base colour (used for active fill + text tint)
-        //   active = whether the panel is currently open
-        auto qlBtn = [&](const char* label, float r, float g, float b, bool active) -> bool {
-            ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding,  5.0f);
-            ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
+        // Toggle pill button: filled when active, ghost when inactive
+        auto qlBtn = [&](const char* label,
+                         float r, float g, float b,
+                         bool active) -> bool {
+            ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding,   6.0f);
+            ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, active ? 1.0f : 0.0f);
             float textW = ImGui::CalcTextSize(label).x;
-            float btnW  = textW + ImGui::GetStyle().FramePadding.x * 2.0f + 10.0f;
+            float btnW  = textW + ImGui::GetStyle().FramePadding.x * 2.0f + 14.0f;
             if (active) {
-                ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(r*0.55f, g*0.55f, b*0.55f, 1.00f));
-                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(r*0.72f, g*0.72f, b*0.72f, 1.00f));
-                ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(r*0.40f, g*0.40f, b*0.40f, 1.00f));
-                ImGui::PushStyleColor(ImGuiCol_Text,          ImVec4(r*1.4f > 1.f ? 1.f : r*1.4f,
-                                                                      g*1.4f > 1.f ? 1.f : g*1.4f,
-                                                                      b*1.4f > 1.f ? 1.f : b*1.4f, 1.00f));
+                float tr = std::min(r * 1.6f, 1.f), tg = std::min(g * 1.6f, 1.f), tb = std::min(b * 1.6f, 1.f);
+                ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(r*0.45f, g*0.45f, b*0.45f, 1.00f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(r*0.65f, g*0.65f, b*0.65f, 1.00f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(r*0.32f, g*0.32f, b*0.32f, 1.00f));
+                ImGui::PushStyleColor(ImGuiCol_Border,        ImVec4(std::min(r*1.2f,1.f), std::min(g*1.2f,1.f), std::min(b*1.2f,1.f), 0.75f));
+                ImGui::PushStyleColor(ImGuiCol_Text,          ImVec4(tr, tg, tb, 1.00f));
             } else {
-                ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(r*0.10f, g*0.10f, b*0.10f, 1.00f));
-                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(r*0.28f, g*0.28f, b*0.28f, 0.90f));
-                ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(r*0.45f, g*0.45f, b*0.45f, 1.00f));
-                ImGui::PushStyleColor(ImGuiCol_Text,          ImVec4(0.52f, 0.56f, 0.65f, 1.00f));
+                ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(r*0.07f, g*0.07f, b*0.07f, 1.00f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(r*0.22f, g*0.22f, b*0.22f, 0.95f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(r*0.38f, g*0.38f, b*0.38f, 1.00f));
+                ImGui::PushStyleColor(ImGuiCol_Border,        ImVec4(0,0,0,0));
+                ImGui::PushStyleColor(ImGuiCol_Text,          ImVec4(0.46f, 0.50f, 0.60f, 1.00f));
             }
             bool clicked = ImGui::Button(label, ImVec2(btnW, kBtnH));
-            ImGui::PopStyleColor(4);
+            ImGui::PopStyleColor(5);
             ImGui::PopStyleVar(2);
             return clicked;
         };
 
-        // ── WORLD group (blue: 0.36, 0.61, 0.84) ────
-        if (qlBtn("World##ql", 0.36f, 0.61f, 0.84f, showWorldEditor))
+        auto intra = [&]() { ImGui::SameLine(0.0f, 3.0f); };  // tight gap between same-group buttons
+
+        // ───────────────────── WORLD ──────────────────────────────────────────
+        drawGroupLabel("WORLD", IM_COL32(100, 158, 215, 175));
+
+        if (qlBtn("World##ql",     0.36f, 0.61f, 0.84f, showWorldEditor))
             showWorldEditor = !showWorldEditor;
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
-            ImGui::SetTooltip("World Editor  [Ctrl+W]");
+            ImGui::SetTooltip("World Editor  [Ctrl+W]\nTerrain generation, seed & save/load");
 
-        ImGui::SameLine(0.0f, 12.0f);
-        drawBarSep();
+        intra();
+        if (qlBtn("Adv.World##ql", 0.30f, 0.52f, 0.78f, showAdvWorldEditor))
+            showAdvWorldEditor = !showAdvWorldEditor;
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+            ImGui::SetTooltip("Advanced World Editor\nBiomes, erosion, ore distribution & structures");
 
-        // ── DESIGN group (violet: 0.62, 0.40, 0.88) ─
-        if (qlBtn("Blocks##ql",  0.62f, 0.40f, 0.88f, showBlockDesigner))
+        ImGui::SameLine(0.0f, kSepMargin);
+        drawGroupSep(IM_COL32(80, 130, 200, 200));
+
+        // ───────────────────── DESIGN ─────────────────────────────────────────
+        drawGroupLabel("DESIGN", IM_COL32(172, 115, 242, 175));
+
+        if (qlBtn("Blocks##ql",   0.62f, 0.40f, 0.88f, showBlockDesigner))
             showBlockDesigner = !showBlockDesigner;
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
-            ImGui::SetTooltip("Block Designer  [B]");
-        ImGui::SameLine(0.0f, 3.0f);
+            ImGui::SetTooltip("Block Designer  [B]\nCreate and edit custom block types");
 
-        if (qlBtn("Mobs##ql",    0.62f, 0.40f, 0.88f, showMobDesigner))
+        intra();
+        if (qlBtn("Mobs##ql",     0.62f, 0.40f, 0.88f, showMobDesigner))
             showMobDesigner = !showMobDesigner;
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
-            ImGui::SetTooltip("Mob Designer  [M]");
-        ImGui::SameLine(0.0f, 3.0f);
+            ImGui::SetTooltip("Mob Designer  [M]\nBuild mob meshes, animations and AI");
 
-        if (qlBtn("Textures##ql",0.62f, 0.40f, 0.88f, showTextureDesigner))
-            showTextureDesigner = !showTextureDesigner;
-        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
-            ImGui::SetTooltip("Texture Designer");
-        ImGui::SameLine(0.0f, 3.0f);
-
-        if (qlBtn("Tools##ql",   0.62f, 0.40f, 0.88f, showToolDesigner))
+        intra();
+        if (qlBtn("Tools##ql",    0.52f, 0.34f, 0.80f, showToolDesigner))
             showToolDesigner = !showToolDesigner;
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
-            ImGui::SetTooltip("Tool Designer");
-        ImGui::SameLine(0.0f, 3.0f);
+            ImGui::SetTooltip("Tool Designer\nDefine tools, stats and breaking properties");
 
-        if (qlBtn("Weather##ql", 0.62f, 0.40f, 0.88f, showWeatherDesigner))
+        intra();
+        if (qlBtn("Textures##ql", 0.52f, 0.34f, 0.80f, showTextureDesigner))
+            showTextureDesigner = !showTextureDesigner;
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+            ImGui::SetTooltip("Texture Designer\nPaint and manage block / mob texture atlases");
+
+        ImGui::SameLine(0.0f, kSepMargin);
+        drawGroupSep(IM_COL32(150, 90, 222, 200));
+
+        // ───────────────────── ENVIRON ────────────────────────────────────────
+        drawGroupLabel("ENVIRON", IM_COL32(70, 205, 182, 175));
+
+        if (qlBtn("Weather##ql",  0.22f, 0.72f, 0.64f, showWeatherDesigner))
             showWeatherDesigner = !showWeatherDesigner;
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
-            ImGui::SetTooltip("Weather Designer");
+            ImGui::SetTooltip("Weather Designer\nPrecipitation, wind and ambient particles");
 
-        ImGui::SameLine(0.0f, 12.0f);
-        drawBarSep();
+        intra();
+        if (qlBtn("Sounds##ql",   0.22f, 0.72f, 0.64f, showSoundDesigner))
+            showSoundDesigner = !showSoundDesigner;
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+            ImGui::SetTooltip("Sound Designer\nCompose and layer ambient and block sounds");
 
-        // ── ENGINE group (amber: 0.90, 0.62, 0.20) ──
-        if (qlBtn("Engine##ql", 0.90f, 0.62f, 0.20f, showInteractionEditor))
+        ImGui::SameLine(0.0f, kSepMargin);
+        drawGroupSep(IM_COL32(50, 185, 162, 200));
+
+        // ───────────────────── ENGINE ─────────────────────────────────────────
+        drawGroupLabel("ENGINE", IM_COL32(233, 172, 45, 175));
+
+        if (qlBtn("Engine##ql",  0.90f, 0.62f, 0.20f, showInteractionEditor))
             showInteractionEditor = !showInteractionEditor;
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
-            ImGui::SetTooltip("Game Engine Editor  [G]");
-        ImGui::SameLine(0.0f, 3.0f);
+            ImGui::SetTooltip("Game Engine Editor  [G]\nBlock mechanics, mob AI and control bindings");
 
-        if (qlBtn("Sound##ql",  0.90f, 0.62f, 0.20f, showSoundEditor))
+        intra();
+        if (qlBtn("Sfx Ed.##ql",  0.82f, 0.55f, 0.15f, showSoundEditor))
             showSoundEditor = !showSoundEditor;
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
-            ImGui::SetTooltip("Sound Editor");
+            ImGui::SetTooltip("Sound Editor\nMix and preview in-game sound effects");
 
-        ImGui::SameLine(0.0f, 12.0f);
-        drawBarSep();
+        ImGui::SameLine(0.0f, kSepMargin);
+        drawGroupSep(IM_COL32(215, 155, 28, 200));
 
-        // ── VIEW group (green: 0.28, 0.82, 0.50) ────
+        // ───────────────────── DEBUG + SETTINGS ──────────────────────────────
+        drawGroupLabel("DEBUG", IM_COL32(75, 215, 128, 175));
+
         if (qlBtn("Profiler##ql", 0.28f, 0.82f, 0.50f, showProfiler))
             showProfiler = !showProfiler;
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
-            ImGui::SetTooltip("Performance Profiler  [F2]");
-        ImGui::SameLine(0.0f, 3.0f);
+            ImGui::SetTooltip("Performance Profiler  [F2]\nFrame timing, GPU and CPU usage graph");
 
-        if (qlBtn("Prefs##ql", 0.28f, 0.82f, 0.50f, showSettings))
+        intra();
+        if (qlBtn("Memory##ql",   0.28f, 0.82f, 0.50f, showMemory))
+            showMemory = !showMemory;
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+            ImGui::SetTooltip("Memory Inspector  [F3]\nArena allocator and chunk pool utilisation");
+
+        intra();
+        if (qlBtn("ECS##ql",      0.28f, 0.82f, 0.50f, showECS))
+            showECS = !showECS;
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+            ImGui::SetTooltip("ECS Inspector  [F4]\nEntity / Component / System live viewer");
+
+        intra();
+        drawGroupSep(IM_COL32(50, 185, 100, 200));
+        if (qlBtn("Settings##ql", 0.55f, 0.58f, 0.68f, showSettings))
             showSettings = !showSettings;
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
-            ImGui::SetTooltip("Preferences  [F10]");
+            ImGui::SetTooltip("Preferences  [Ctrl+P]\nDisplay, graphics and control settings");
     }
 
     // ── Right-aligned status / info bar ──────────────────────────────────────
     {
-        const float fps = ImGui::GetIO().Framerate;
+        const float fps     = ImGui::GetIO().Framerate;
         const float frameMs = (fps > 0.0f) ? 1000.0f / fps : 0.0f;
+
+        // ── Compute text buffers ─────────────────────────────────────────────
+        // Player position — compact signed-integer format
+        char posBuf[48];
+        snprintf(posBuf, sizeof(posBuf), "%d / %d / %d",
+                 (int)m_playerX, (int)m_playerY, (int)m_playerZ);
+
+        // Game mode badge: "CRTV" (Creative) or "SURV" (Survival)
+        const char* modeBuf  = m_isCreativeMode ? "CRTV" : "SURV";
+        const ImVec4 modeCol = m_isCreativeMode
+            ? ImVec4(0.30f, 0.70f, 0.98f, 1.00f)  // cyan-blue for Creative
+            : ImVec4(0.98f, 0.70f, 0.20f, 1.00f);  // amber for Survival
+
+        // Player level
+        char levelBuf[16];
+        snprintf(levelBuf, sizeof(levelBuf), "Lv.%u", m_playerLevel);
+
+        // HP — colour shifts red when low
+        char hpBuf[16];
+        snprintf(hpBuf, sizeof(hpBuf), "HP:%.0f", m_playerHp);
+        const ImVec4 hpCol = (m_playerHp > 10.0f) ? ImVec4(0.90f, 0.35f, 0.35f, 1.00f)
+                           : (m_playerHp > 5.0f)  ? ImVec4(1.00f, 0.60f, 0.10f, 1.00f)
+                                                   : ImVec4(1.00f, 0.15f, 0.15f, 1.00f);
+
+        // Oxygen — only show when drowning (< 20)
+        char oxyBuf[16] = "";
+        bool showOxy = (m_playerOxygen < 19.5f);
+        if (showOxy)
+            snprintf(oxyBuf, sizeof(oxyBuf), "O2:%.0f", m_playerOxygen);
+
+        // Biome name (empty string → hidden)
+        const bool showBiome  = !m_biomeName.empty();
+        const bool showChunks = (m_loadedChunks > 0);
+
+        char chunkBuf[24];
+        if (showChunks)
+            snprintf(chunkBuf, sizeof(chunkBuf), "%d ch", m_loadedChunks);
 
         // Count open panels
         int openCount = (showProfiler ? 1 : 0) + (showMemory ? 1 : 0) + (showECS ? 1 : 0)
@@ -578,14 +674,15 @@ void GUIManager::showMainMenuBar(bool& showProfiler, bool& showMemory, bool& sho
                       + (showSoundEditor ? 1 : 0) + (showInteractionEditor ? 1 : 0)
                       + (showSettings ? 1 : 0);
 
-        // FPS colour: emerald ≥55  /  amber ≥30  /  red <30
-        const ImVec4 fpsCol = (fps >= 55.f) ? ImVec4(0.30f, 0.90f, 0.48f, 1.00f)
+        // FPS colour: emerald ≥60 / lime 60>x≥45 / amber ≥30 / red <30
+        const ImVec4 fpsCol = (fps >= 60.f) ? ImVec4(0.30f, 0.90f, 0.48f, 1.00f)
+                            : (fps >= 45.f) ? ImVec4(0.54f, 0.88f, 0.30f, 1.00f)
                             : (fps >= 30.f) ? ImVec4(0.96f, 0.76f, 0.15f, 1.00f)
                                             : ImVec4(0.96f, 0.28f, 0.28f, 1.00f);
 
         char fpsBuf[32], msBuf[24], panelBuf[32];
-        snprintf(fpsBuf,   sizeof(fpsBuf),   "%.0f FPS",    fps);
-        snprintf(msBuf,    sizeof(msBuf),    "%.1f ms",     frameMs);
+        snprintf(fpsBuf,   sizeof(fpsBuf),   "%.0f FPS", fps);
+        snprintf(msBuf,    sizeof(msBuf),    "%.1f ms",  frameMs);
         if (openCount > 0)
             snprintf(panelBuf, sizeof(panelBuf), "%d open", openCount);
         else
@@ -594,13 +691,42 @@ void GUIManager::showMainMenuBar(bool& showProfiler, bool& showMemory, bool& sho
         constexpr const char* kVersion = "V0.6 Beta";
         const float spx = ImGui::GetStyle().ItemSpacing.x;
 
-        // Measure total width for right-align
-        float totalW = ImGui::CalcTextSize(fpsBuf).x  + spx
-                     + ImGui::CalcTextSize(msBuf).x   + spx + 16.0f // sep
-                     + ImGui::CalcTextSize(kVersion).x + spx + 16.0f; // sep
+        // ── Measure total width for right-align ──────────────────────────────
+        float totalW = 0.0f;
+
+        // Mode badge
+        totalW += ImGui::CalcTextSize(modeBuf).x + spx + 22.0f;  // +chip padding
+        // Level badge
+        totalW += ImGui::CalcTextSize(levelBuf).x + spx;
+        // HP
+        totalW += ImGui::CalcTextSize(hpBuf).x + spx + 22.0f;    // +chip padding
+        // Oxygen (conditional)
+        if (showOxy) totalW += ImGui::CalcTextSize(oxyBuf).x + spx;
+        // World name badge (shown in status between HP and XYZ)
+        const bool showWorldN = !m_worldName.empty();
+        if (showWorldN) totalW += 10.0f + ImGui::CalcTextSize(m_worldName.c_str()).x + 10.0f + spx + 16.0f;
+        // Position block
+        float posLabelW = ImGui::CalcTextSize("XYZ").x;
+        float posValW   = ImGui::CalcTextSize(posBuf).x;
+        totalW += posLabelW + 4.0f + posValW + spx + 16.0f; // +sep
+
+        // Biome badge
+        if (showBiome)
+            totalW += ImGui::CalcTextSize(m_biomeName.c_str()).x + spx + 16.0f;
+
+        // Chunk count
+        if (showChunks)
+            totalW += ImGui::CalcTextSize(chunkBuf).x + spx + 16.0f;
+
+        // Panel count
         if (panelBuf[0])
             totalW += ImGui::CalcTextSize(panelBuf).x + spx + 16.0f;
-        totalW += 18.0f; // right margin
+
+        // FPS + ms
+        totalW += ImGui::CalcTextSize(fpsBuf).x + 4.0f + ImGui::CalcTextSize(msBuf).x + spx + 16.0f;
+
+        // Version
+        totalW += ImGui::CalcTextSize(kVersion).x + spx + 18.0f; // right margin
 
         ImGui::SetCursorPosX(ImGui::GetContentRegionMax().x - totalW);
 
@@ -615,21 +741,152 @@ void GUIManager::showMainMenuBar(bool& showProfiler, bool& showMemory, bool& sho
             ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 8.0f);
         };
 
-        // Open-panel count badge
+        // ── Game Mode badge — coloured chip ────────────────────────────────────
+        {
+            ImVec2 cp   = ImGui::GetCursorScreenPos();
+            float  tw   = ImGui::CalcTextSize(modeBuf).x;
+            const float chPadX = 6.0f, chPadY = 2.0f;
+            float  barH = ImGui::GetFrameHeight();
+            float  chipY = cp.y + (barH - ImGui::GetTextLineHeight() - chPadY*2.0f)*0.5f;
+            ImU32  chipBg = m_isCreativeMode ? IM_COL32(28,55,105,150) : IM_COL32(105,60,15,150);
+            ImGui::GetWindowDrawList()->AddRectFilled(
+                ImVec2(cp.x - chPadX, chipY),
+                ImVec2(cp.x + tw + chPadX, chipY + ImGui::GetTextLineHeight() + chPadY*2.0f),
+                chipBg, 3.5f);
+        }
+        ImGui::PushStyleColor(ImGuiCol_Text, modeCol);
+        ImGui::TextUnformatted(modeBuf);
+        ImGui::PopStyleColor();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+            ImGui::SetTooltip(m_isCreativeMode ? "Creative Mode" : "Survival Mode");
+
+        // ── Player Level ──────────────────────────────────────────────────────
+        ImGui::SameLine(0.0f, 6.0f);
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.95f, 0.88f, 0.25f, 1.00f));
+        ImGui::TextUnformatted(levelBuf);
+        ImGui::PopStyleColor();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+            ImGui::SetTooltip("Player level — gain XP by mining blocks");
+
+        // ── HP — coloured chip ────────────────────────────────────────────────
+        ImGui::SameLine(0.0f, 6.0f);
+        {
+            ImVec2 cp   = ImGui::GetCursorScreenPos();
+            float  tw   = ImGui::CalcTextSize(hpBuf).x;
+            const float chPadX = 6.0f, chPadY = 2.0f;
+            float  barH = ImGui::GetFrameHeight();
+            float  chipY = cp.y + (barH - ImGui::GetTextLineHeight() - chPadY*2.0f)*0.5f;
+            ImU32  chipBg = (m_playerHp > 10.0f) ? IM_COL32(90,20,20,130)
+                          : (m_playerHp >  5.0f) ? IM_COL32(110,55,10,150)
+                                                  : IM_COL32(130,15,15,170);
+            ImGui::GetWindowDrawList()->AddRectFilled(
+                ImVec2(cp.x - chPadX, chipY),
+                ImVec2(cp.x + tw + chPadX, chipY + ImGui::GetTextLineHeight() + chPadY*2.0f),
+                chipBg, 3.5f);
+        }
+        ImGui::PushStyleColor(ImGuiCol_Text, hpCol);
+        ImGui::TextUnformatted(hpBuf);
+        ImGui::PopStyleColor();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+            ImGui::SetTooltip("Player health (%.1f / 20)", (double)m_playerHp);
+
+        // ── Oxygen (drowning indicator) ────────────────────────────────────────
+        if (showOxy) {
+            ImGui::SameLine(0.0f, 4.0f);
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.40f, 0.75f, 1.00f, 1.00f));
+            ImGui::TextUnformatted(oxyBuf);
+            ImGui::PopStyleColor();
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+                ImGui::SetTooltip("Oxygen (%.0f / 20) — move upward or surface to breathe", (double)m_playerOxygen);
+        }
+
+        // ── World name badge ──────────────────────────────────────────────────
+        if (showWorldN) {
+            inlineSep();
+            // Subtle tinted pill background
+            {
+                ImVec2 cp    = ImGui::GetCursorScreenPos();
+                float  tw    = ImGui::CalcTextSize(m_worldName.c_str()).x;
+                float  padX  = 5.0f, padY = 2.0f;
+                float  barH  = ImGui::GetFrameHeight();
+                float  chipY = cp.y + (barH - ImGui::GetTextLineHeight() - padY*2.0f)*0.5f;
+                ImGui::GetWindowDrawList()->AddRectFilled(
+                    ImVec2(cp.x - padX, chipY),
+                    ImVec2(cp.x + tw + padX, chipY + ImGui::GetTextLineHeight() + padY*2.0f),
+                    IM_COL32(35, 55, 88, 130), 4.0f);
+            }
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.78f, 0.91f, 1.00f, 1.00f));
+            ImGui::TextUnformatted(m_worldName.c_str());
+            ImGui::PopStyleColor();
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+                ImGui::SetTooltip("World: %s", m_worldName.c_str());
+        }
+
+        inlineSep();
+
+        // ── Player position ───────────────────────────────────────────────────
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.38f, 0.50f, 0.65f, 1.00f));
+        ImGui::TextUnformatted("XYZ");
+        ImGui::PopStyleColor();
+        ImGui::SameLine(0.0f, 4.0f);
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.78f, 0.84f, 0.94f, 1.00f));
+        ImGui::TextUnformatted(posBuf);
+        ImGui::PopStyleColor();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+            ImGui::SetTooltip("Player position  X / Y / Z");
+
+        // ── Biome badge ───────────────────────────────────────────────────────
+        if (showBiome) {
+            inlineSep();
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.40f, 0.78f, 0.52f, 1.00f));
+            ImGui::TextUnformatted(m_biomeName.c_str());
+            ImGui::PopStyleColor();
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+                ImGui::SetTooltip("Current biome");
+        }
+
+        // ── Chunk count ──────────────────────────────────────────────────────
+        if (showChunks) {
+            inlineSep();
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.56f, 0.56f, 0.70f, 1.00f));
+            ImGui::TextUnformatted(chunkBuf);
+            ImGui::PopStyleColor();
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+                ImGui::SetTooltip("Loaded chunks: %d", m_loadedChunks);
+        }
+
+        // ── Open panel count badge ────────────────────────────────────────────
         if (panelBuf[0]) {
+            inlineSep();
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.62f, 0.72f, 0.88f, 1.00f));
             ImGui::TextUnformatted(panelBuf);
             ImGui::PopStyleColor();
-            inlineSep();
         }
 
-        // FPS (colour-coded)
+        inlineSep();
+
+        // ── FPS (colour-coded chip) ───────────────────────────────────────────
+        {
+            ImVec2 cp   = ImGui::GetCursorScreenPos();
+            float  tw   = ImGui::CalcTextSize(fpsBuf).x;
+            const float chPadX = 5.0f, chPadY = 2.0f;
+            float  barH = ImGui::GetFrameHeight();
+            float  chipY = cp.y + (barH - ImGui::GetTextLineHeight() - chPadY*2.0f)*0.5f;
+            ImU32  chipBg = (fps >= 60.f) ? IM_COL32(15,80,30,120)
+                          : (fps >= 45.f) ? IM_COL32(50,80,15,120)
+                          : (fps >= 30.f) ? IM_COL32(90,70,10,130)
+                                          : IM_COL32(100,15,15,140);
+            ImGui::GetWindowDrawList()->AddRectFilled(
+                ImVec2(cp.x - chPadX, chipY),
+                ImVec2(cp.x + tw + chPadX, chipY + ImGui::GetTextLineHeight() + chPadY*2.0f),
+                chipBg, 3.5f);
+        }
         ImGui::PushStyleColor(ImGuiCol_Text, fpsCol);
         ImGui::TextUnformatted(fpsBuf);
         ImGui::PopStyleColor();
         ImGui::SameLine(0.0f, 4.0f);
 
-        // ms (muted, same line)
+        // ── ms (muted, same line) ────────────────────────────────────────────
         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.38f, 0.44f, 0.55f, 1.00f));
         ImGui::TextUnformatted(msBuf);
         ImGui::PopStyleColor();
@@ -638,7 +895,7 @@ void GUIManager::showMainMenuBar(bool& showProfiler, bool& showMemory, bool& sho
 
         inlineSep();
 
-        // Version badge
+        // ── Version badge ────────────────────────────────────────────────────
         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.36f, 0.42f, 0.52f, 1.00f));
         ImGui::TextUnformatted(kVersion);
         ImGui::PopStyleColor();
@@ -1278,7 +1535,8 @@ void GUIManager::coordinateMobBlockEdit(bool& showBlockDesigner) {
 // showWindowTabBar — redesigned secondary row pinned below the main menu bar.
 //
 // Features:
-//   • 40 px height (up from 28 px) for easier click targets
+//   • 50 px height for better click targets and visual weight
+//   • Background unified with the menu bar for seamless chrome
 //   • Left-side coloured accent bar on each chip for category identity
 //   • Group labels: WORLD / DESIGN / ENGINE / VIEW
 //   • Hover tooltip shows the full panel title
@@ -1318,7 +1576,7 @@ void GUIManager::showWindowTabBar(
 
     const float menuBarH = ImGui::GetFrameHeightWithSpacing();
     ImGuiViewport* vp = ImGui::GetMainViewport();
-    constexpr float kBarH = 40.0f;  // Taller bar for better click targets
+    constexpr float kBarH = 38.0f;  // Taller toolbar
 
     ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x, vp->WorkPos.y + menuBarH));
     ImGui::SetNextWindowSize(ImVec2(vp->WorkSize.x, kBarH));
@@ -1331,22 +1589,28 @@ void GUIManager::showWindowTabBar(
         ImGuiWindowFlags_NoSavedSettings |
         ImGuiWindowFlags_NoBringToFrontOnFocus;
 
-    // Slight gradient background: slightly lighter than menu bar
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,  ImVec2(10.0f, 0.0f));
+    // Background unified with the menu bar for seamless top chrome.
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,  ImVec2(12.0f, 0.0f));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
-    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,    ImVec2(4.0f, 0.0f));
-    ImGui::PushStyleColor(ImGuiCol_WindowBg,  ImVec4(0.060f, 0.062f, 0.080f, 1.00f));
-    ImGui::PushStyleColor(ImGuiCol_Border,    ImVec4(0.14f,  0.17f,  0.25f,  0.70f));
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,    ImVec2(5.0f, 0.0f));
+    ImGui::PushStyleColor(ImGuiCol_WindowBg,  ImVec4(0.042f, 0.044f, 0.060f, 1.00f));
+    ImGui::PushStyleColor(ImGuiCol_Border,    ImVec4(0.10f,  0.13f,  0.20f,  0.80f));
 
     ImGui::Begin("##PanelTabBar", nullptr, flags);
 
-    // Draw a subtle top border line
+    // Top border: very thin line under menu bar
     {
         ImDrawList* dl = ImGui::GetWindowDrawList();
         ImVec2 p = ImGui::GetWindowPos();
-        float w  = ImGui::GetWindowWidth();
+        float  w = ImGui::GetWindowWidth();
+        float  h = ImGui::GetWindowHeight();
         dl->AddLine(ImVec2(p.x, p.y), ImVec2(p.x + w, p.y),
                     IM_COL32(50, 70, 110, 160), 1.0f);
+        // Bottom gradient line: accent colour fade — marks the edge of the toolbar zone
+        dl->AddRectFilledMultiColor(
+            ImVec2(p.x, p.y + h - 2.0f), ImVec2(p.x + w, p.y + h),
+            IM_COL32(30, 50, 90, 90), IM_COL32(58, 106, 158, 120),
+            IM_COL32(58, 106, 158, 120), IM_COL32(30, 50, 90, 90));
     }
 
     if (openCount == 0) {
@@ -1418,21 +1682,22 @@ void GUIManager::showWindowTabBar(
 
         firstChip = false;
 
-        // ── Chip: background + coloured left accent bar ─────────────────────
+        // ── Chip: background + coloured bottom accent line ──────────────────
         ImVec2 chipPos = ImGui::GetCursorScreenPos();
         chipPos.y += (kBarH - chipH) * 0.5f;
 
-        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding,   4.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding,   7.0f);
         ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
-        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,    ImVec2(10.0f, 3.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,    ImVec2(12.0f, 4.0f));
+        // Brighter chip so it reads clearly against the unified menu bar background.
         ImGui::PushStyleColor(ImGuiCol_Button,
-            ImVec4(r*0.14f, g*0.14f, b*0.14f, 1.0f));
+            ImVec4(r*0.22f, g*0.22f, b*0.22f, 1.0f));
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
-            ImVec4(r*0.28f, g*0.28f, b*0.28f, 1.0f));
+            ImVec4(r*0.38f, g*0.38f, b*0.38f, 1.0f));
         ImGui::PushStyleColor(ImGuiCol_ButtonActive,
-            ImVec4(r*0.45f, g*0.45f, b*0.45f, 1.0f));
+            ImVec4(r*0.55f, g*0.55f, b*0.55f, 1.0f));
         ImGui::PushStyleColor(ImGuiCol_Text,
-            ImVec4(std::min(r*1.6f, 1.0f), std::min(g*1.6f, 1.0f), std::min(b*1.6f, 1.0f), 1.0f));
+            ImVec4(std::min(r*1.7f, 1.0f), std::min(g*1.7f, 1.0f), std::min(b*1.7f, 1.0f), 1.0f));
 
         ImGui::SetCursorPosY((kBarH - chipH) * 0.5f);
         char chipID[64];
@@ -1444,15 +1709,15 @@ void GUIManager::showWindowTabBar(
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
             ImGui::SetTooltip("Focus  %s", panels[i].winName);
 
-        // Draw 3 px coloured left accent bar over the button
+        // Draw 2 px coloured BOTTOM accent line under the chip (modern IDE-style tab)
         {
             ImVec2 rMin = ImGui::GetItemRectMin();
             ImVec2 rMax = ImGui::GetItemRectMax();
             ImGui::GetWindowDrawList()->AddRectFilled(
-                ImVec2(rMin.x, rMin.y + 2.0f),
-                ImVec2(rMin.x + 3.0f, rMax.y - 2.0f),
-                IM_COL32((uint8_t)(r * 220), (uint8_t)(g * 220), (uint8_t)(b * 220), 230),
-                1.5f);
+                ImVec2(rMin.x + 2.0f, rMax.y - 2.0f),
+                ImVec2(rMax.x - 2.0f, rMax.y),
+                IM_COL32((uint8_t)(r * 220), (uint8_t)(g * 220), (uint8_t)(b * 220), 200),
+                1.0f);
         }
 
         ImGui::PopStyleColor(4);
@@ -1460,7 +1725,7 @@ void GUIManager::showWindowTabBar(
 
         // ── Close × ─────────────────────────────────────────────────────────
         ImGui::SameLine(0.0f, 0.0f);
-        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding,   4.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding,   7.0f);
         ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,    ImVec2(3.0f, 3.0f));
         ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
@@ -1471,7 +1736,7 @@ void GUIManager::showWindowTabBar(
         ImGui::SetCursorPosY((kBarH - chipH) * 0.5f);
         char closeID[64];
         snprintf(closeID, sizeof(closeID), "x##close%d", i);
-        if (ImGui::Button(closeID, ImVec2(18.0f, chipH)))
+        if (ImGui::Button(closeID, ImVec2(20.0f, chipH)))
             *panels[i].flag = false;
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
             ImGui::SetTooltip("Close  %s", panels[i].label);

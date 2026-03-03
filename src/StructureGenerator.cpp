@@ -20,44 +20,65 @@ static int findGround(Chunk* chunk, int x, int z) {
 // ---------------------------------------------------------------------------
 
 void StructureGenerator::generateTree(Chunk* chunk, int x, int y, int z, uint8_t woodType, uint8_t leafType) {
-    int height = 4 + rand() % 3;
+    int height = 5 + rand() % 3; // 5-7 blocks tall (taller trunk)
     for (int i = 0; i < height; ++i) {
         chunk->set(x, y + i, z, woodType);
     }
 
-    // Slightly elongated sphere gives a more natural leafy crown
-    for (int ly = -2; ly <= 2; ++ly) {
-        for (int lx = -2; lx <= 2; ++lx) {
-            for (int lz = -2; lz <= 2; ++lz) {
-                if (lx * lx + ly * ly + lz * lz <= 7) {
-                    if (chunk->get(x + lx, y + height + ly, z + lz) == BLOCK_AIR)
-                        chunk->set(x + lx, y + height + ly, z + lz, leafType);
+    // Full, lush spheroid canopy — NO gaps.
+    // Shape: wider in XZ (r=3), shorter in Y (r=2.5), centred above trunk top.
+    // Equation: (lx^2 + lz^2)/9 + ly^2/6.25 <= 1  (filled ellipsoid)
+    // This guarantees a dense, Minecraft-like rounded treetop with no missing corners.
+    for (int ly = -2; ly <= 3; ++ly) {
+        for (int lx = -3; lx <= 3; ++lx) {
+            for (int lz = -3; lz <= 3; ++lz) {
+                // Normalised ellipsoid distance: < 1.0 is inside
+                float dist = (float)(lx * lx + lz * lz) / 9.0f
+                           + (float)(ly * ly) / 6.25f;
+                if (dist <= 1.0f) {
+                    int bx = x + lx;
+                    int by = y + height + ly;
+                    int bz = z + lz;
+                    // Only overwrite air so trunk and ground are never replaced
+                    if (chunk->get(bx, by, bz) == BLOCK_AIR)
+                        chunk->set(bx, by, bz, leafType);
                 }
             }
+        }
+    }
+    // Crown tuft: fill a 1-block radius disc one block above the ellipsoid top
+    const int tipY = y + height + 3;
+    for (int lx = -1; lx <= 1; ++lx) {
+        for (int lz = -1; lz <= 1; ++lz) {
+            if (chunk->get(x + lx, tipY, z + lz) == BLOCK_AIR)
+                chunk->set(x + lx, tipY, z + lz, leafType);
         }
     }
 }
 
 // Conifer / spruce-style pine tree — ideal for Mountains and Snowy biomes.
 void StructureGenerator::generatePineTree(Chunk* chunk, int x, int y, int z) {
-    const int height = 9 + rand() % 4; // 9-12 blocks tall
+    const int height = 10 + rand() % 4; // 10-13 blocks tall — taller for drama
 
     // Trunk straight up
     for (int i = 0; i < height; ++i)
         chunk->set(x, y + i, z, BLOCK_WOOD);
 
-    // Canopy: nine consecutive layers — no gaps — widest at base, tapering to tip.
+    // Canopy: dense layered tiers — NO gaps, fills all interior voxels per layer.
+    // Each tier uses a solid square (r² check) rather than circle for maximum density.
+    // The widest tiers are at the base (skirt), tapering linearly to a point.
     struct Layer { int yOff; int r; };
     const Layer layers[] = {
-        { height - 5, 3 },   // base skirt — widest
-        { height - 4, 3 },   // base skirt continued
-        { height - 3, 3 },   // lower crown
-        { height - 2, 2 },   // lower-mid crown
-        { height - 1, 2 },   // mid crown
-        { height,     2 },   // upper-mid crown
-        { height + 1, 2 },   // upper crown
-        { height + 2, 1 },   // near-top
-        { height + 3, 0 },   // apex (single leaf)
+        { height - 6, 4 },   // very wide skirt
+        { height - 5, 4 },   // wide skirt
+        { height - 4, 3 },   // lower crown
+        { height - 3, 3 },   // lower crown continued
+        { height - 2, 2 },   // mid crown
+        { height - 1, 2 },   // mid crown continued
+        { height,     2 },   // upper crown
+        { height + 1, 1 },   // near-top
+        { height + 2, 1 },   // near-top continued
+        { height + 3, 0 },   // apex
     };
 
     for (const auto& l : layers) {
@@ -65,13 +86,15 @@ void StructureGenerator::generatePineTree(Chunk* chunk, int x, int y, int z) {
         if (cy < 1 || cy >= Chunk::SizeY) continue;
         for (int lx = -l.r; lx <= l.r; ++lx) {
             for (int lz = -l.r; lz <= l.r; ++lz) {
-                if (lx * lx + lz * lz <= l.r * l.r + 1) {
+                // Use r²+1 to always fill the ring corners — no gaps
+                if (lx * lx + lz * lz <= l.r * l.r + l.r) {
                     if (chunk->get(x + lx, cy, z + lz) == BLOCK_AIR)
                         chunk->set(x + lx, cy, z + lz, BLOCK_LEAVES);
                 }
             }
         }
     }
+    // Apex leaf cap
     const int tipY = y + height + 3;
     if (tipY < Chunk::SizeY && chunk->get(x, tipY, z) == BLOCK_AIR)
         chunk->set(x, tipY, z, BLOCK_LEAVES);

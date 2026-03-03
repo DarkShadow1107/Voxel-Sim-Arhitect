@@ -75,11 +75,12 @@ PoolAllocator::~PoolAllocator() {
 }
 
 void* PoolAllocator::allocate() {
+    std::lock_guard<std::mutex> lock(m_mutex);
     if (!m_freeList) {
         std::cerr << "POOL ALLOCATION FAILED: No free blocks remaining in pool." << std::endl;
         return nullptr;
     }
-    
+
     Node* node = m_freeList;
     m_freeList = m_freeList->next;
     m_usedCount++;
@@ -88,7 +89,9 @@ void* PoolAllocator::allocate() {
 
 void PoolAllocator::deallocate(void* ptr) {
     if (!ptr) return;
-    
+
+    std::lock_guard<std::mutex> lock(m_mutex);
+
     // Simple safety check: is ptr within our buffer?
     if (ptr < m_buffer || ptr >= static_cast<char*>(m_buffer) + m_totalSize) {
         std::cerr << "CRITICAL ERROR: Attempted to deallocate pointer outside of PoolAllocator bounds!" << std::endl;

@@ -167,7 +167,8 @@ public:
 private:
     static constexpr int kVoxelCount = SizeX * SizeY * SizeZ;
     uint8_t* m_voxels;
-    
+    bool m_heapAllocated = false; // true when pool was exhausted and heap was used as fallback
+
     // Global allocator for all chunk voxel data
     static PoolAllocator s_allocator;
 
